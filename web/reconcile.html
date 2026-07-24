@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>对账确认</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;font-size:14px;line-height:1.5;display:flex;flex-direction:column;min-height:100vh}
+  header{background:#1f4e78;color:#fff;padding:14px 20px;flex:none;position:sticky;top:0;z-index:20}
+  .hbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:700}
+  .htitle p{margin:3px 0 0;font-size:12px;opacity:.85}
+  .hnav{display:flex;gap:12px;flex-wrap:wrap}
+  .navbtn{background:#fff;color:#1f4e78;text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .navbtn:hover{background:#eef4fb}
+  .htools{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:11px}
+  .runbtn{font-size:14px;padding:9px 18px;border:0;background:#137333;color:#fff;border-radius:8px;cursor:pointer;font-weight:700}
+  .runbtn:hover{background:#0f5f2a}
+  #summary{font-size:13px;color:#e6eef7}
+  main{padding:16px 20px;max-width:1200px;width:100%;box-sizing:border-box;margin:0 auto}
+  .fixbanner{background:#fff4e5;border:1px solid #f0c98a;color:#8a5a00;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px}
+  .fixbanner a{color:#1f4e78;font-weight:700}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .tab{padding:8px 14px;border:1px solid #d5dbe3;background:#fff;color:#425466;border-radius:20px;cursor:pointer;font-size:13px;font-weight:600}
+  .tab.on{background:#1f4e78;color:#fff;border-color:#1f4e78}
+  .tab .n{display:inline-block;min-width:18px;text-align:center;margin-left:4px;background:rgba(0,0,0,.12);border-radius:10px;padding:0 6px;font-size:12px}
+  .tab.on .n{background:rgba(255,255,255,.25)}
+  .batchbar{background:#eaf5ec;border:1px solid #bfe0c6;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px}
+  .bapprove{background:#137333;color:#fff;border:0;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px}
+  .bapprove:hover{background:#0f5f2a}
+  .card{background:#fff;border:1px solid #e2e6ec;border-radius:10px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .chead{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#f7f9fc;border-bottom:1px solid #eef1f5;flex-wrap:wrap}
+  .badge{font-size:12px;font-weight:700;padding:2px 9px;border-radius:12px}
+  .b-11{background:#e7f0ff;color:#1b4fd0}.b-1N{background:#efe7ff;color:#6b2fd0}
+  .b-N1{background:#fff0e0;color:#b5610a}.b-NN{background:#ffe6e6;color:#c02626}.b-none{background:#eceff3;color:#6b7684}
+  .score{font-size:12px;color:#425466}.score b{font-size:15px;color:#1f4e78}
+  .delta{font-size:12px;color:#c02626;font-weight:600}
+  .cbody{display:flex;gap:0;flex-wrap:wrap}
+  .side{flex:1;min-width:280px;padding:12px 14px}
+  .side.inv{border-right:1px dashed #e2e6ec}
+  .side h4{margin:0 0 8px;font-size:12px;color:#8a95a3;font-weight:700;letter-spacing:.03em}
+  .rec{border:1px solid #eef1f5;border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#fcfdff}
+  .rec .nm{font-weight:700;font-size:13px;margin-bottom:3px}
+  .rec .kv{font-size:12px;color:#546174}
+  .rec .amt{font-weight:700;color:#1f4e78}
+  .basis{padding:8px 14px;border-top:1px solid #eef1f5;background:#fbfcfe;font-size:12px;color:#425466}
+  .basis li{margin:1px 0}
+  .cact{padding:10px 14px;border-top:1px solid #eef1f5;display:flex;gap:10px;justify-content:flex-end}
+  .ok{background:#137333;color:#fff;border:0;padding:7px 16px;border-radius:8px;cursor:pointer;font-weight:600}
+  .no{background:#fff;color:#c02626;border:1px solid #e6b3b3;padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+  .muted{color:#8a95a3}
+  .empty{padding:40px;text-align:center;color:#8a95a3}
+  .conf{color:#137333;font-size:12px}
+  /* 展开对照：左发票原件、右对应流水（表上高亮匹配行）*/
+  .expander{margin-left:auto;background:#eef4fb;color:#1f4e78;border:1px solid #cfe0f2;border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600}
+  .expander:hover{background:#dceaf7}
+  .mdetail{border-top:1px solid #eef1f5;background:#f8fafc;padding:12px 14px}
+  .cmp{display:flex;gap:14px;flex-wrap:wrap}
+  .cmpcol{flex:1;min-width:300px}
+  .cmpcol h5{margin:0 0 8px;font-size:12px;color:#1f4e78;font-weight:700}
+  .pv{margin-bottom:12px;border:1px solid #e2e6ec;border-radius:8px;overflow:hidden;background:#fff}
+  .pvcap{font-size:12px;color:#425466;padding:6px 10px;background:#f2f5f9;border-bottom:1px solid #eef1f5}
+  /* 滚动限高放在外层 .pvscroll；定位父级 .pvimg 紧贴图片实际尺寸，
+     否则 hlbox 的 top/height 百分比会相对被限高的容器算 → 高亮框错位（坐标叠框老坑）。*/
+  .pvscroll{max-height:560px;overflow:auto}
+  .pvimg{position:relative;line-height:0}
+  .pvimg img{width:100%;height:auto;display:block}
+  .pvscroll img.marked{width:100%;height:auto;display:block}  /* 流水：框已烧入图片，直接显示 */
+  .hlbox{position:absolute;border:1px dashed #9aa7b5;background:rgba(154,167,181,.12)}
+  /* 关键字段分栏框：发票号(蓝)/日期(绿)/金额(橙)——两侧同色=同类，便于对照 */
+  .fldbox{position:absolute;border:2px solid;border-radius:2px;box-sizing:border-box}
+  .fldbox .lb{position:absolute;top:-15px;left:-2px;font-size:10px;font-weight:700;color:#fff;padding:0 4px;border-radius:3px;white-space:nowrap;line-height:15px}
+  .fb-no{border-color:#2f6fed;background:rgba(47,111,237,.15)} .fb-no .lb{background:#2f6fed}
+  .fb-date{border-color:#0f8f5f;background:rgba(15,143,95,.15)} .fb-date .lb{background:#0f8f5f}
+  .fb-amt{border-color:#e8820c;background:rgba(232,130,12,.17)} .fb-amt .lb{background:#e8820c}
+  .fb-vendor{border-color:#7b3fbf;background:rgba(123,63,191,.15)} .fb-vendor .lb{background:#7b3fbf}
+  .cmplegend{font-size:12px;color:#546174;margin:0 0 10px}
+  .cmplegend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin:0 4px 0 12px;vertical-align:middle}
+  .loading{padding:16px;color:#8a95a3;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hbar">
+    <div class="htitle"><h1>🔗 对账确认</h1><p>自动匹配为主、人工处理例外：高可信唯一可一键批量通过，异常逐项确认</p></div>
+    <nav class="hnav">
+      <a href="/" class="navbtn">← 提取上传</a>
+      <a href="/review" class="navbtn">📝 提取纠错/审核</a>
+      <a href="/ledger" class="navbtn">📒 总账</a>
+      <a href="/reports" class="navbtn">📊 财务报表</a>
+      <a href="/learned" class="navbtn">🧠 已学规则</a>
+      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
+    </nav>
+  </div>
+  <div class="htools">
+    <button class="runbtn" onclick="runMatch()">▶ 运行自动匹配</button>
+    <span id="summary">加载中…</span>
+  </div>
+</header>
+<main>
+  <div id="fixbanner"></div>
+  <div class="tabs" id="tabs"></div>
+  <div id="batchbar"></div>
+  <div id="list"><div class="empty">点「▶ 运行自动匹配」开始。</div></div>
+</main>
+<script>
+const B = (window.APP_BASE||'');
+const TABS = [
+  {k:'auto', label:'待批量确认'},
+  {k:'confirm', label:'待确认'},
+  {k:'multi', label:'多候选/重点审核'},
+  {k:'unmatched', label:'未匹配/待补证'},
+  {k:'no_match_needed', label:'无需匹配(待核)'},
+  {k:'confirmed', label:'已确认', status:'confirmed'},
+  {k:'rejected', label:'已拒绝', status:'rejected'},
+];
+let CUR='auto', COUNTS={}, NEEDFIX={}, MATCHES={};
+let LIST_IDS=[];          // 当前列表顺序的 match id（用于确认后跳下一条）
+let FOCUS_ID=null;        // 渲染后要滚到/展开的 match（确认后跳下一条、刷新后回到上次比对处）
+let FOCUS_EXPAND=false;   // 该 focus 是否自动展开对照（延续比对流）
+function saveState(){ try{ localStorage.setItem('reconcile:lastCat',CUR);
+  if(FOCUS_ID!=null) localStorage.setItem('reconcile:lastMatch',String(FOCUS_ID)); }catch(e){} }
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// 统一 POST：断网/超时/非-2xx/后端 error 都给可见反馈；成功返回对象，失败弹提示返回 null。
+async function postJSON(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify(body||{})});
+    let d = null; try{ d = await r.json(); }catch(_e){}
+    if(!r.ok){ alert('操作失败（HTTP '+r.status+'）'+((d&&d.message)?('：'+d.message):'')); return null; }
+    return d || {};
+  }catch(e){ alert('网络错误，操作可能未生效，请刷新确认：'+e); return null; }
+}
+
+async function loadSummary(){
+  const d = await (await fetch('/api/reconcile/summary')).json();
+  COUNTS = d.counts||{}; NEEDFIX = d.need_fix||{};
+  document.getElementById('summary').textContent =
+    `候选池：发票 ${d.pool_invoices} · 交易 ${d.pool_transactions}　|　已确认 ${COUNTS.confirmed||0} 组　|　发票后到→点「运行自动匹配」即自动重配（未匹配/无需匹配项不锁定）`;
+  const nf = (NEEDFIX.invoice||0)+(NEEDFIX.statement||0);
+  const fixType = (NEEDFIX.invoice||0) > 0 ? 'invoice' : 'statement';   // 优先跳发票（多数如此），否则跳流水
+  document.getElementById('fixbanner').innerHTML = nf>0
+    ? `<div class="fixbanner">⚠ 有 <b>${nf}</b> 条未通过提取校验（发票 ${NEEDFIX.invoice||0} · 流水 ${NEEDFIX.statement||0}），暂不参与匹配，请先到 <a href="${B}/review?fix=${fixType}">提取纠错/审核</a> 修正后重跑匹配（点击直接定位到第一条待纠错记录）。</div>`
+    : '';
+  renderTabs();
+}
+function renderTabs(){
+  document.getElementById('tabs').innerHTML = TABS.map(t=>{
+    const n = t.k==='confirmed' ? (COUNTS.confirmed||0) : (COUNTS[t.k]||0);
+    return `<div class="tab ${t.k===CUR?'on':''}" onclick="switchTab('${t.k}')">${t.label}<span class="n">${n}</span></div>`;
+  }).join('');
+}
+function switchTab(k){ CUR=k; FOCUS_ID=null; FOCUS_EXPAND=false; renderTabs(); saveState(); loadMatches(); }
+
+async function loadMatches(){
+  const t = TABS.find(x=>x.k===CUR);
+  let ms;
+  if(CUR==='no_match_needed'){
+    // 无需匹配：同时显示"待核(proposed)"与"已确认无需发票(confirmed)"，撤销就在这里
+    const a = (await (await fetch('/api/reconcile/matches?status=proposed&category=no_match_needed')).json()).matches||[];
+    const b = (await (await fetch('/api/reconcile/matches?status=confirmed&category=no_match_needed')).json()).matches||[];
+    ms = a.concat(b);
+  }else{
+    const status = t.status||'proposed';
+    const cat = t.status ? '' : CUR;
+    const d = await (await fetch('/api/reconcile/matches?status='+status+(cat?'&category='+cat:''))).json();
+    ms = d.matches||[];
+  }
+  // 批量条：仅 auto 且有内容时显示
+  document.getElementById('batchbar').innerHTML = (CUR==='auto' && ms.length)
+    ? `<div class="batchbar"><b>${ms.length}</b> 组高可信唯一匹配，可一键全部确认入账。
+       <button class="bapprove" onclick="confirmBatch('auto')">✓ 一键全部通过（${ms.length}）</button></div>` : '';
+  const box = document.getElementById('list');
+  MATCHES = {}; ms.forEach(m=>MATCHES[m.id]=m); LIST_IDS = ms.map(m=>m.id);
+  if(!ms.length){ box.innerHTML = `<div class="empty">该类别暂无记录。</div>`; FOCUS_ID=null; return; }
+  box.innerHTML = ms.map(m=>card(m, !t.status)).join('');
+  // 渲染后：滚到（并按需展开）焦点匹配——用于「确认后跳下一条」「刷新后回到上次比对处」
+  if(FOCUS_ID!=null && MATCHES[FOCUS_ID]){
+    const el=document.querySelector('.card[data-mid="'+FOCUS_ID+'"]');
+    if(el) el.scrollIntoView({block:'center'});
+    if(FOCUS_EXPAND){ toggleDetail(FOCUS_ID); }
+    FOCUS_EXPAND=false;
+  } else { FOCUS_ID=null; }
+}
+
+// 展开对照：左发票原件、右对应流水（表上高亮匹配到的交易行），便于核对是否真的对应
+async function toggleDetail(id){
+  const el=document.getElementById('det-'+id), btn=document.getElementById('exp-'+id);
+  if(!el) return;
+  if(el.style.display!=='none'){ el.style.display='none'; if(btn)btn.textContent='🔍 展开对照'; return; }
+  el.style.display='block'; if(btn)btn.textContent='▲ 收起对照';
+  FOCUS_ID=id; saveState();   // 记住"正在比对的这条"，刷新后回到这里
+  if(el.dataset.loaded) return;
+  el.innerHTML='<div class="loading">加载原件中…</div>';
+  try{ el.innerHTML = await buildDetail(MATCHES[id]); el.dataset.loaded='1'; }
+  catch(e){ el.innerHTML='<div class="loading">加载失败，可到审核页查看原件。</div>'; }
+}
+function normRef(s){ return String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').toUpperCase(); }  // 与后端 matcher._norm 一致
+// 在流水某笔的「渲染附言文本」里精确定位发票号子串 → 按等宽字符宽算出该段的像素框（只框发票号，不框整段附言）
+function refBoxOnStmt(t, invoices){
+  const dr=(t.desc_render||''), up=dr.toUpperCase();
+  if(t.ref_x0==null||t.char_w==null||!t.date_bbox) return null;
+  for(const inv of (invoices||[])){
+    const no=(inv.invoice_no||'').trim();
+    if(no.length<3) continue;
+    const p=up.indexOf(no.toUpperCase());   // 发票号在附言里通常原样出现（如 PAY SIM-2026-009）
+    if(p>=0){
+      const x0=t.ref_x0 + p*t.char_w, x1=t.ref_x0 + (p+no.length)*t.char_w;
+      return [0, x0, t.date_bbox[2], x1, t.date_bbox[4]];
+    }
+  }
+  return null;   // 附言被截断致发票号不可见 → 不画（不再拿整段附言冒充发票号）
+}
+function boxStyle(b,sz){
+  const L=b[1]/sz[0]*100,T=b[2]/sz[1]*100,W=(b[3]-b[1])/sz[0]*100,H=(b[4]-b[2])/sz[1]*100;
+  return `left:${L.toFixed(2)}%;top:${T.toFixed(2)}%;width:${W.toFixed(2)}%;height:${H.toFixed(2)}%`;
+}
+function fldBox(b,sz,cls,label){   // b=bbox [page,x0,y0,x1,y1]；无 bbox 则不画。只画彩色框、不加文字标签（避免遮挡原件文字，颜色含义看图例）
+  if(!b||!sz) return '';
+  return `<div class="fldbox ${cls}" title="${label||''}" style="${boxStyle(b,sz)}"></div>`;
+}
+async function buildDetail(m){
+  // 左：发票原件 + 关键字段框（发票号/日期/金额）
+  let left='';
+  for(const x of (m.invoices||[]).filter(v=>!v.missing)){
+    let d={}; try{ d=await (await fetch('/api/review/'+encodeURIComponent(x.file_hash))).json(); }catch(e){}
+    const sz=(d.page_sizes&&d.page_sizes[0])?d.page_sizes[0]:null;
+    const F=d.fields||{};
+    const boxes = fldBox((F['invoice_no']||{}).bbox, sz, 'fb-no', '发票号')
+                + fldBox((F['invoice_date']||{}).bbox, sz, 'fb-date', '日期')
+                + fldBox((F['total_due']||{}).bbox, sz, 'fb-amt', '金额')
+                + fldBox((F['issuer_name']||{}).bbox, sz, 'fb-vendor', '公司/供应商');
+    left += `<div class="pv"><div class="pvcap">发票 ${esc(x.invoice_no||x.file_name||'')}　${esc(x.currency||'')} ${esc(x.amount||'')}　${esc(x.date||'')}</div>
+      <div class="pvscroll"><div class="pvimg"><img src="${B}/api/review/${encodeURIComponent(x.file_hash)}/page/0"
+        onerror="this.closest('.pvscroll').innerHTML='<div class=loading>（无法预览原件，可到审核页查看）</div>'">${boxes}</div></div></div>`;
+  }
+  left = left || '<div class="muted">无发票原件</div>';
+  // 右：流水——高亮框由**后端烧入图片**（同坐标系，裁剪到匹配行附近），前端只显示图片、不叠框（彻底避免错位）
+  const byStmt={};
+  (m.txns||[]).forEach(t=>{ if(!t.missing){ (byStmt[t.stmt_hash]=byStmt[t.stmt_hash]||[]).push(t.index); } });
+  let right='';
+  for(const h of Object.keys(byStmt)){
+    let name=h; try{ const d=await (await fetch('/api/review/'+encodeURIComponent(h))).json(); name=d.file_name||h; }catch(e){}
+    right+=`<div class="pv"><div class="pvcap">流水 ${esc(name)}（框已按同坐标标注：蓝=发票号 绿=日期 橙=金额 紫=公司/供应商）</div>
+      <div class="pvscroll"><img class="marked" src="${B}/api/reconcile/${m.id}/stmt/${encodeURIComponent(h)}.png"
+        onerror="this.closest('.pvscroll').innerHTML='<div class=loading>（无法预览流水）</div>'"></div></div>`;
+  }
+  const legend = `<div class="cmplegend">同色=同类字段，便于对照：<i style="background:#2f6fed"></i>发票号 <i style="background:#0f8f5f"></i>日期 <i style="background:#e8820c"></i>金额 <i style="background:#7b3fbf"></i>公司/供应商</div>`;
+  return legend + `<div class="cmp"><div class="cmpcol"><h5>发票原件</h5>${left}</div>
+    <div class="cmpcol"><h5>对应银行流水</h5>${right||'<div class="muted">无对应流水</div>'}</div></div>`;
+}
+function stmtScroll(img){
+  const pvimg=img.parentNode, box=pvimg.querySelector('.hlbox'), scroll=pvimg.parentNode;  // .pvscroll 才是滚动层
+  if(box && scroll){ scroll.scrollTop = Math.max(0, box.offsetTop - scroll.clientHeight/2); }
+}
+
+function recInv(x){
+  if(x.missing) return `<div class="rec muted">发票已删除（${esc(x.file_hash).slice(0,8)}）</div>`;
+  return `<div class="rec"><div class="nm">${esc(x.invoice_no||x.file_name||'—')}</div>
+    <div class="kv">供应商：${esc(x.vendor||'—')}</div>
+    <div class="kv">日期：${esc(x.date||'—')}${x.due_date?(' · 到期 '+esc(x.due_date)):''}</div>
+    <div class="kv amt">${esc(x.currency||'')} ${esc(x.amount||'—')}</div></div>`;
+}
+function recTxn(x){
+  if(x.missing) return `<div class="rec muted">交易已删除</div>`;
+  const amt = x.expense!=null?('-'+x.expense):(x.income!=null?('+'+x.income):'—');
+  return `<div class="rec"><div class="nm">${esc(x.date||'—')}</div>
+    <div class="kv">${esc(x.description||'—')}</div>
+    <div class="kv">来源：${esc(x.stmt_name||'—')}</div>
+    <div class="kv amt">${esc(x.currency||'')} ${esc(amt)}</div></div>`;
+}
+function card(m, actionable){
+  const cls = {'1:1':'b-11','1:N':'b-1N','N:1':'b-N1','N:N':'b-NN','none':'b-none'}[m.match_type]||'b-none';
+  const delta = (m.amount_delta && m.amount_delta!=='0') ? `<span class="delta">差额 ${esc(m.amount_delta)} ${esc(m.currency||'')}</span>` : '';
+  const invs = (m.invoices||[]).map(recInv).join('') || '<div class="rec muted">（无发票）</div>';
+  const txns = (m.txns||[]).map(recTxn).join('') || '<div class="rec muted">（无交易）</div>';
+  const basis = (m.basis||[]).map(b=>`<li>• ${esc(b)}</li>`).join('');
+  const hasBoth = (m.invoices||[]).length && (m.txns||[]).length;
+  let act;
+  if(m.status==='rejected'){
+    act = `<div class="cact"><span style="color:#c02626;margin-right:auto">✗ 已判不成立（这一对不再自动匹配）</span>
+             <button class="ok" onclick="unrejectOne(${m.id})">↩ 撤销拒绝</button></div>`;
+  }else if(m.status==='confirmed'){
+    if(!(m.invoices||[]).length){   // 单边已确认 = 确认无需发票 → 可撤销
+      act = `<div class="cact conf" style="justify-content:space-between">无需发票·已确认${m.confirmed_at?(' · '+esc(m.confirmed_at)):''}
+               <button class="ok" onclick="unackOne(${m.id})">↩ 撤销</button></div>`;
+    }else{                          // 有发票的已确认 = 已对账 → 可「撤销对账(反做)」
+      act = `<div class="cact conf" style="justify-content:space-between">已对账${m.confirmed_by?('（'+esc(m.confirmed_by)+'）'):''}${m.confirmed_at?(' · '+esc(m.confirmed_at)):''}
+               <button class="no" onclick="unconfirmOne(${m.id})" title="反做：退回待确认，解锁这张发票/这笔流水，可再改/删或重新对账">↩ 撤销对账</button></div>`;
+    }
+  }else if(hasBoth){                 // 待确认：双边有对应关系
+    act = `<div class="cact"><button class="no" onclick="rejectOne(${m.id})">✗ 不成立</button>
+             <button class="ok" onclick="confirmOne(${m.id})">✓ 确认对应关系</button></div>`;
+  }else if(m.category==='no_match_needed'){   // 无需匹配(待核) → 确认无需发票
+    act = `<div class="cact"><span class="muted" style="margin-right:auto">系统判为无需发票，请人工核对</span>
+             <button class="ok" onclick="ackOne(${m.id})">✓ 确认无需发票</button></div>`;
+  }else{                             // 其它单边：未匹配（待补对应发票/流水）
+    act = `<div class="cact"><span class="muted">${(m.invoices||[]).length?'待补对应流水':'待补对应发票'}</span></div>`;
+  }
+  const exp = hasBoth ? `<button class="expander" onclick="toggleDetail(${m.id})" id="exp-${m.id}">🔍 展开对照</button>` : '';
+  return `<div class="card" data-mid="${m.id}"><div class="chead">
+      <span class="badge ${cls}">${esc(m.match_type)}</span>
+      <span class="score">匹配分 <b>${m.match_score}</b>／100</span>${delta}${exp}
+    </div>
+    <div class="cbody"><div class="side inv"><h4>发票</h4>${invs}</div>
+      <div class="side"><h4>银行流水交易</h4>${txns}</div></div>
+    <div class="mdetail" id="det-${m.id}" style="display:none"></div>
+    ${basis?`<ul class="basis">${basis}</ul>`:''}${act}</div>`;
+}
+
+async function runMatch(){
+  document.getElementById('summary').textContent='正在匹配…';
+  const d = await (await fetch('/api/reconcile/run',{method:'POST'})).json();
+  await loadSummary(); await loadMatches();
+  document.getElementById('summary').textContent += `　（本次匹配 ${d.saved} 组）`;
+}
+// 处理某条后跳到"下一条需要比对的"：取当前列表里它的下一条（没有则上一条）
+function _nextAfter(id){
+  const i = LIST_IDS.indexOf(id);
+  if(i < 0) return null;
+  return (LIST_IDS[i+1] != null) ? LIST_IDS[i+1] : (LIST_IDS[i-1] != null ? LIST_IDS[i-1] : null);
+}
+async function confirmOne(id){
+  const wasExpanded = document.getElementById('det-'+id) && document.getElementById('det-'+id).style.display!=='none';
+  const nextId = _nextAfter(id);
+  const r = await postJSON('/api/reconcile/confirm', {match_id:id});
+  if(!r) return;                                    // 失败已弹提示
+  if(r.needs_invoice_review){
+    // 应计先于结算：发票未审核 → 跳去该发票审核页，通过后自动回到这条匹配继续确认
+    try{ localStorage.setItem('reconcile:lastCat', CUR); localStorage.setItem('reconcile:lastMatch', String(id)); }catch(e){}
+    alert('该发票「'+(r.invoice_no||'')+'」还没审核确认（应计）。先去审核通过，通过后会自动回到这条对账继续确认。');
+    window.location = (window.APP_BASE||'') + '/review?hash=' + encodeURIComponent(r.invoice_hash) + '&back=reconcile';
+    return;
+  }
+  if(r.blocked){ alert('⛔ ' + (r.message||'成员已入账，不能重复对应。')); await loadSummary(); await loadMatches(); return; }
+  FOCUS_ID = nextId; FOCUS_EXPAND = wasExpanded;   // 跳到下一条；若刚在对照就自动展开下一条，延续比对
+  saveState();
+  await loadSummary(); await loadMatches();
+}
+async function rejectOne(id){
+  if(!confirm('确认这组对应关系不成立？这一对将不再自动匹配（可在「已拒绝」里撤销）。')) return;
+  const wasExpanded = document.getElementById('det-'+id) && document.getElementById('det-'+id).style.display!=='none';
+  const nextId = _nextAfter(id);
+  const rr = await postJSON('/api/reconcile/reject', {match_id:id});
+  if(!rr) return;                                   // 失败已弹提示
+  if(rr.ok===false){ alert(rr.message||'无法标记不成立'); return; }
+  FOCUS_ID = nextId; FOCUS_EXPAND = wasExpanded;
+  saveState();
+  await loadSummary(); await loadMatches();
+}
+async function ackOne(id){
+  const r = await (await fetch('/api/reconcile/ack-no-match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_id:id})})).json();
+  if(r && r.ok===false){ alert(r.message||'确认失败'); return; }
+  await loadSummary(); await loadMatches();
+}
+async function unackOne(id){
+  await fetch('/api/reconcile/unack-no-match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_id:id})});
+  await loadSummary(); await loadMatches();
+}
+async function unrejectOne(id){
+  if(!confirm('撤销这条「不成立」？撤销后这一对会重新参与自动匹配。')) return;
+  await fetch('/api/reconcile/unreject',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_id:id})});
+  await loadSummary(); await loadMatches();
+}
+async function unconfirmOne(id){
+  if(!confirm('撤销这条已确认的对账（反做）？\n\n退回「待确认」，并解锁对应的发票和流水交易（之后可再修改/删除，或重新对账）。此动作会留痕。')) return;
+  const d = await (await fetch('/api/reconcile/unconfirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_id:id})})).json();
+  if(d && d.ok===false){ alert(d.message||'撤销失败'); return; }
+  await loadSummary(); await loadMatches();
+}
+async function confirmBatch(cat){
+  if(!confirm('一键确认该类别全部匹配？将标记为已核对入账。')) return;
+  const d = await postJSON('/api/reconcile/confirm-batch', {category:cat});
+  if(!d) return;                                    // 失败已弹提示
+  await loadSummary(); await loadMatches();
+  alert('已确认 '+(d.confirmed||0)+' 组。'
+    +((d.skipped_need_review||0)?('　跳过 '+d.skipped_need_review+' 组（发票未审核确认，请逐条去审核后再确认）。'):'')
+    +((d.skipped||0)?('　跳过 '+d.skipped+' 组（成员已入账到别处，防重复）。'):''));
+}
+// 进页：恢复上次所在类别 + 上次在比对的那条（滚到并展开）——刷新后停在上次比对位置
+(async()=>{
+  try{
+    const lc=localStorage.getItem('reconcile:lastCat'); if(lc && TABS.some(t=>t.k===lc)) CUR=lc;
+    const lm=localStorage.getItem('reconcile:lastMatch'); if(lm){ FOCUS_ID=Number(lm); FOCUS_EXPAND=true; }
+  }catch(e){}
+  await loadSummary(); await loadMatches();
+})();
+</script>
+<button id="toTop" title="回到顶部" onclick="__toTop()">↑ 顶部</button>
+<style>#toTop{position:fixed;right:18px;bottom:18px;z-index:9999;display:none;padding:9px 13px;border:0;border-radius:22px;background:#1f4e78;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}#toTop:hover{background:#163a5a}</style>
+<script>
+(function(){
+  var SC='#queue,.qcol,.detail,.fields,.orig,#list,main,.list,.layout';
+  function conts(){return [document.scrollingElement||document.documentElement].concat([].slice.call(document.querySelectorAll(SC)));}
+  window.__toTop=function(){conts().forEach(function(el){try{el.scrollTo({top:0,behavior:'smooth'});}catch(e){if(el)el.scrollTop=0;}});};
+  function upd(){var b=document.getElementById('toTop');if(!b)return;var on=false;conts().forEach(function(el){if(el&&el.scrollTop>200)on=true;});b.style.display=on?'block':'none';}
+  document.addEventListener('scroll',upd,true);window.addEventListener('resize',upd);setInterval(upd,600);
+})();
+</script>
+</body>
+</html>

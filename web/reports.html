@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>财务报表</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;font-size:14px;line-height:1.5;display:flex;flex-direction:column;min-height:100vh}
+  header{background:#1f4e78;color:#fff;padding:14px 20px;flex:none;position:sticky;top:0;z-index:20}
+  .hbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:700}
+  .htitle p{margin:3px 0 0;font-size:12px;opacity:.85}
+  .hnav{display:flex;gap:12px;flex-wrap:wrap}
+  .navbtn{background:#fff;color:#1f4e78;text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .navbtn:hover{background:#eef4fb}
+  #basis{font-size:12px;color:#e6eef7;margin-top:11px}
+  main{padding:16px 20px;max-width:900px;width:100%;box-sizing:border-box;margin:0 auto}
+  .checkbar{padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:600}
+  .ck-ok{background:#eaf5ec;border:1px solid #bfe0c6;color:#137333}
+  .ck-bad{background:#fdecea;border:1px solid #f0b3ab;color:#c02626}
+  .ck-bad ul{margin:6px 0 0;padding-left:20px;font-weight:400}
+  .rpt{background:#fff;border:1px solid #e2e6ec;border-radius:10px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .rpt h2{font-size:15px;margin:0;padding:11px 16px;background:#f7f9fc;border-bottom:1px solid #eef1f5;color:#1f4e78}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td{padding:7px 16px;border-top:1px solid #f2f4f7}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.subtotal td,tr.total td{font-weight:700;border-top:1px solid #d5dbe3}
+  tr.total td{border-top:2px solid #1f4e78;color:#1f4e78}
+  tr.section td{background:#fbfcfe;font-weight:700;color:#425466;font-size:12px;letter-spacing:.03em}
+  tr.grand td{font-weight:700;border-top:2px solid #1f4e78}
+  .empty{padding:40px;text-align:center;color:#8a95a3}
+  .neg{color:#c02626}
+</style>
+</head>
+<body>
+<header>
+  <div class="hbar">
+    <div class="htitle"><h1>📊 财务报表</h1><p>从总账取数自动生成 · 勾稽通过才出表（IFRS · USD · 单期）</p></div>
+    <nav class="hnav">
+      <a href="/" class="navbtn">← 提取上传</a>
+      <a href="/ledger" class="navbtn">📒 总账</a>
+      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
+    </nav>
+  </div>
+  <div id="basis">加载中…</div>
+</header>
+<main><div id="body"><div class="empty">加载中…</div></div></main>
+<script>
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function num(v){ const s=esc(v); return (String(v).indexOf('-')===0)?`<span class="neg">${s}</span>`:s; }
+async function postJSON(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+    let d=null; try{ d=await r.json(); }catch(_e){}
+    if(!r.ok){ alert('操作失败（HTTP '+r.status+'）'+((d&&d.error)?('：'+d.error):'')); return null; }
+    return d||{};
+  }catch(e){ alert('网络错误：'+e); return null; }
+}
+
+async function doExport(){
+  const r = await postJSON('/api/reports/export', {});
+  if(r&&r.download){ window.location.href = r.download; }
+}
+function checkBar(ck){
+  if(ck.can_issue) return `<div class="checkbar ck-ok" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span>✓ 勾稽通过：资产=负债+权益、现金流量表期末现金=货币资金、科目归类完整——可出表</span><button onclick="doExport()" style="background:#137333;color:#fff;border:0;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">⬇ 导出 Excel</button></div>`;
+  let items = '';
+  const e1=ck.E1_balance_sheet_balanced, e3=ck.E3_cash_tie, e6=ck.E6_all_classified;
+  if(!e1.ok) items += `<li>E1 资产负债表不平衡，差额 ${esc(e1.diff)}</li>`;
+  if(e3&&!e3.ok) items += `<li>E3 现金流量表期末现金 ≠ 资产负债表货币资金，差额 ${esc(e3.diff)}</li>`;
+  if(!e6.ok) items += `<li>E6 有未归类科目：${(e6.unclassified||[]).map(esc).join('、')}（请在科目表补映射）</li>`;
+  return `<div class="checkbar ck-bad">✗ 勾稽未通过，暂不出表（下方为草稿，仅供定位）：<ul>${items}</ul></div>`;
+}
+function cfTable(cf){
+  const row=(x)=>`<tr><td style="padding-left:28px">${esc(x.label)}</td><td class="num">${num(x.amount)}</td></tr>`;
+  let r = cf.lines.map(row).join('');
+  r += `<tr class="subtotal"><td>现金净增加 Net Change in Cash</td><td class="num">${num(cf.net_change)}</td></tr>`;
+  r += `<tr><td style="padding-left:28px">期初现金 Opening Cash</td><td class="num">${num(cf.opening)}</td></tr>`;
+  r += `<tr class="grand"><td>期末现金 Ending Cash</td><td class="num">${num(cf.ending)}</td></tr>`;
+  const tie = cf.e3_ok?'✓ 与货币资金勾稽':`✗ 与货币资金差 ${esc(cf.e3_diff)}`;
+  return `<div class="rpt"><h2>现金流量表 Cash Flow（直接法）　<span style="font-size:12px;font-weight:400">${tie}</span></h2><table>${r}</table></div>`;
+}
+function isTable(is){
+  let r='';
+  for(const l of is.lines){
+    const cls = l.kind==='total'?'total':(l.kind==='subtotal'?'subtotal':'');
+    r += `<tr class="${cls}"><td>${esc(l.label)}</td><td class="num">${num(l.amount)}</td></tr>`;
+  }
+  return `<div class="rpt"><h2>利润表 Income Statement</h2><table>${r}</table></div>`;
+}
+function bsTable(bs){
+  const row=(x)=>`<tr><td style="padding-left:28px">${esc(x.label)}</td><td class="num">${num(x.amount)}</td></tr>`;
+  let r='<tr class="section"><td colspan="2">资产 Assets</td></tr>';
+  r += bs.assets.map(row).join('');
+  r += `<tr class="subtotal"><td>资产合计 Total Assets</td><td class="num">${num(bs.assets_total)}</td></tr>`;
+  r += '<tr class="section"><td colspan="2">负债 Liabilities</td></tr>';
+  r += bs.liabilities.map(row).join('');
+  r += `<tr class="subtotal"><td>负债合计 Total Liabilities</td><td class="num">${num(bs.liabilities_total)}</td></tr>`;
+  r += '<tr class="section"><td colspan="2">权益 Equity</td></tr>';
+  r += bs.equity.map(row).join('');
+  r += `<tr class="subtotal"><td>权益合计 Total Equity</td><td class="num">${num(bs.equity_total)}</td></tr>`;
+  r += `<tr class="grand"><td>负债 + 权益 Total Liab. & Equity</td><td class="num">${num(bs.liab_equity_total)}</td></tr>`;
+  const bal = bs.balanced?'✓ 平衡':`✗ 不平衡（差 ${esc(bs.diff)}）`;
+  return `<div class="rpt"><h2>资产负债表 Balance Sheet　<span style="font-size:12px;font-weight:400">${bal}</span></h2><table>${r}</table></div>`;
+}
+(async function(){
+  let d={}; try{ d = await (await fetch('/api/reports')).json(); }catch(e){}
+  const b=d.basis||{};
+  document.getElementById('basis').innerHTML =
+    `编制基础 ${esc(b.framework||'IFRS')}　功能货币 ${esc(b.currency||'USD')}　期间 ${esc(b.period||'')}`;
+  if(!d.checks){ document.getElementById('body').innerHTML='<div class="empty">暂无数据。先在「总账」入账并结算。</div>'; return; }
+  document.getElementById('body').innerHTML =
+    checkBar(d.checks) + isTable(d.income_statement) + bsTable(d.balance_sheet)
+    + (d.cash_flow_statement?cfTable(d.cash_flow_statement):'');
+})();
+</script>
+</body>
+</html>

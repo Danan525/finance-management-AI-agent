@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>总账</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;font-size:14px;line-height:1.5;display:flex;flex-direction:column;min-height:100vh}
+  header{background:#1f4e78;color:#fff;padding:14px 20px;flex:none;position:sticky;top:0;z-index:20}
+  .hbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:700}
+  .htitle p{margin:3px 0 0;font-size:12px;opacity:.85}
+  .hnav{display:flex;gap:12px;flex-wrap:wrap}
+  .navbtn{background:#fff;color:#1f4e78;text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .navbtn:hover{background:#eef4fb}
+  #summary{font-size:13px;color:#e6eef7;margin-top:11px}
+  #summary b{color:#fff}
+  #summary .bad{color:#ffcf9e}
+  main{padding:16px 20px;max-width:1080px;width:100%;box-sizing:border-box;margin:0 auto}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .tab{padding:8px 14px;border:1px solid #d5dbe3;background:#fff;color:#425466;border-radius:20px;cursor:pointer;font-size:13px;font-weight:600}
+  .tab.on{background:#1f4e78;color:#fff;border-color:#1f4e78}
+  .tab .n{display:inline-block;min-width:18px;text-align:center;margin-left:4px;background:rgba(0,0,0,.12);border-radius:10px;padding:0 6px;font-size:12px}
+  .tab.on .n{background:rgba(255,255,255,.25)}
+  .card{background:#fff;border:1px solid #e2e6ec;border-radius:10px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .chead{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#f7f9fc;border-bottom:1px solid #eef1f5;flex-wrap:wrap}
+  .chead .no{font-weight:700;color:#1f4e78}
+  .chead .memo{color:#425466}
+  .chead .amt{margin-left:auto;font-weight:700;color:#1f4e78}
+  .badge{font-size:12px;font-weight:700;padding:2px 9px;border-radius:12px}
+  .b-Posted{background:#e7f0ff;color:#1b4fd0}.b-Reversed{background:#eceff3;color:#6b7684}
+  .b-AP{background:#fff0e0;color:#b5610a}.b-AR{background:#e7f0ff;color:#1b4fd0}
+  table.je{width:100%;border-collapse:collapse;font-size:13px}
+  table.je td,table.je th{padding:6px 14px;border-top:1px solid #f0f2f5;text-align:left}
+  table.je th{color:#8a95a3;font-size:12px;font-weight:700}
+  table.je td.num{text-align:right;font-variant-numeric:tabular-nums;color:#222}
+  .cact{padding:10px 14px;border-top:1px solid #eef1f5;display:flex;gap:10px;justify-content:flex-end}
+  .ok{background:#137333;color:#fff;border:0;padding:7px 16px;border-radius:8px;cursor:pointer;font-weight:600}
+  .ok:hover{background:#0f5f2a}
+  .no{background:#fff;color:#c02626;border:1px solid #e6b3b3;padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+  .empty{padding:40px;text-align:center;color:#8a95a3}
+  .muted{color:#8a95a3}
+  .tbcard{background:#fff;border:1px solid #e2e6ec;border-radius:10px;padding:6px 0;margin-bottom:12px}
+  .tbfoot td{font-weight:700;border-top:2px solid #d5dbe3}
+  .warnbar{background:#fff4e5;border:1px solid #f0c98a;color:#8a5a00;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px}
+  select{font-size:13px;padding:3px 6px;border:1px solid #cbd2db;border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hbar">
+    <div class="htitle"><h1>📒 总账</h1><p>人工审核通过后由人显式触发入账（AI 绝不自动过账）；应计为权责发生制，借贷强制平衡</p></div>
+    <nav class="hnav">
+      <a href="/" class="navbtn">← 提取上传</a>
+      <a href="/review" class="navbtn">📝 提取纠错/审核</a>
+      <a href="/reconcile" class="navbtn">🔗 对账</a>
+      <a href="/reports" class="navbtn">📊 财务报表</a>
+      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
+    </nav>
+  </div>
+  <div id="summary">加载中…</div>
+</header>
+<main>
+  <div class="tabs" id="tabs"></div>
+  <div id="body"><div class="empty">加载中…</div></div>
+</main>
+<script>
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function postJSON(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify(body||{})});
+    let d = null; try{ d = await r.json(); }catch(_e){}
+    if(!r.ok){ alert('操作失败（HTTP '+r.status+'）'+((d&&d.error)?('：'+d.error):'')); return null; }
+    return d || {};
+  }catch(e){ alert('网络错误，操作可能未生效，请刷新确认：'+e); return null; }
+}
+async function getJSON(url){ try{ return await (await fetch(url)).json(); }catch(e){ return {}; } }
+
+let CUR = (function(){ try{ return localStorage.getItem('ledger:tab')||'postable'; }catch(e){ return 'postable'; } })();
+const TABS = [{k:'postable',label:'待入账'},{k:'open',label:'待结算'},{k:'entries',label:'已过账分录'},{k:'trial',label:'试算平衡'}];
+
+async function loadSummary(){
+  const s = await getJSON('/api/ledger/summary');
+  const bal = s.balanced ? '<b>平衡 ✓</b>' : '<b class="bad">不平衡 ✗</b>';
+  const ctl = s.control_ok ? '' : '　<b class="bad">控制账户≠明细 ✗</b>';
+  document.getElementById('summary').innerHTML =
+    `待入账 <b>${s.postable||0}</b>　待结算 <b>${s.open||0}</b>　已过账 <b>${s.posted||0}</b>　已红冲 <b>${s.reversed||0}</b>　`+
+    `试算：借 <b>${esc(s.total_debit||'0')}</b> / 贷 <b>${esc(s.total_credit||'0')}</b>　${bal}${ctl}`;
+}
+function renderTabs(){
+  document.getElementById('tabs').innerHTML = TABS.map(t=>
+    `<div class="tab ${t.k===CUR?'on':''}" onclick="switchTab('${t.k}')">${t.label}</div>`).join('');
+}
+function switchTab(k){ CUR=k; try{ localStorage.setItem('ledger:tab',k); }catch(e){} renderTabs(); render(); }
+
+function jeTable(lines){
+  let r = '<table class="je"><tr><th>科目</th><th style="text-align:right">借方</th><th style="text-align:right">贷方</th><th>摘要</th></tr>';
+  for(const l of lines){
+    r += `<tr><td>${esc(l.account)}</td><td class="num">${l.debit&&l.debit!=='0'?esc(l.debit):''}</td>`+
+         `<td class="num">${l.credit&&l.credit!=='0'?esc(l.credit):''}</td><td class="muted">${esc(l.memo||'')}</td></tr>`;
+  }
+  return r+'</table>';
+}
+
+async function renderPostable(){
+  const d = await getJSON('/api/ledger/postable');
+  const invs = d.invoices||[];
+  if(!invs.length){ document.getElementById('body').innerHTML='<div class="empty">没有待入账的发票。先在「审核」里审核通过发票。</div>'; return; }
+  let h = '';
+  for(const x of invs){
+    const pv = x.preview||{};
+    const dir = pv.direction||'AP';
+    const err = pv.error ? `<div class="warnbar">无法生成分录：${esc(pv.error)}</div>` : '';
+    h += `<div class="card">
+      <div class="chead">
+        <span class="badge b-${dir}">${dir==='AP'?'应付/费用':'应收/收入'}</span>
+        <span class="no">${esc(x.invoice_no||'（无票号）')}</span>
+        <span class="memo">${esc(x.issuer||'')}　${esc(x.date||'')}</span>
+        <span class="amt">${esc(x.total_due||'')}</span>
+      </div>
+      ${err}${pv.lines?jeTable(pv.lines):''}
+      <div class="cact">
+        <label class="muted">方向
+          <select id="dir-${esc(x.file_hash)}">
+            <option value="" ${!x.forceDir?'selected':''}>自动（${dir}）</option>
+            <option value="AP">应付/费用 (AP)</option>
+            <option value="AR">应收/收入 (AR)</option>
+          </select></label>
+        <button class="ok" onclick="doPost('${esc(x.file_hash)}')">✓ 确认入账（过账）</button>
+      </div></div>`;
+  }
+  document.getElementById('body').innerHTML = h;
+}
+async function doPost(fh){
+  const sel = document.getElementById('dir-'+fh);
+  const r = await postJSON('/api/ledger/post', {file_hash:fh, direction:(sel&&sel.value)||''});
+  if(r&&r.entry_no){ alert('已入账，凭证号 '+r.entry_no); await loadSummary(); render(); }
+}
+
+const DIFF_REASONS = [
+  {v:'',label:'无差额（票面=现金）'},
+  {v:'fee',label:'手续费（银行/平台）'},
+  {v:'withholding_ar',label:'预扣税-收款被代扣'},
+  {v:'withholding_ap',label:'预扣税-付款代扣'},
+  {v:'discount',label:'现金折扣'},
+  {v:'rounding',label:'舍入差异（微差）'},
+];
+async function renderOpen(){
+  const d = await getJSON('/api/ledger/open');
+  const invs = d.invoices||[]; const ctl = d.control||{};
+  let ctlbar = '';
+  const bad = (ctl.AP&&!ctl.AP.ok)||(ctl.AR&&!ctl.AR.ok);
+  if(bad) ctlbar = `<div class="warnbar">⚠ 控制账户余额 ≠ 明细未结合计！应付 控制${esc(ctl.AP.control)}/明细${esc(ctl.AP.detail)}，应收 控制${esc(ctl.AR.control)}/明细${esc(ctl.AR.detail)}。</div>`;
+  if(!invs.length){ document.getElementById('body').innerHTML=ctlbar+'<div class="empty">没有待结算的发票。发票入账后在此按实际收/付款结算。</div>'; return; }
+  const reasonOpts = DIFF_REASONS.map(r=>`<option value="${r.v}">${r.label}</option>`).join('');
+  let h = ctlbar;
+  for(const x of invs){
+    const dir = x.direction; const isAP = dir==='AP';
+    h += `<div class="card">
+      <div class="chead">
+        <span class="badge b-${dir}">${isAP?'应付':'应收'}</span>
+        <span class="no">${esc(x.invoice_no||x.entry_no)}</span>
+        <span class="memo">全额 ${esc(x.gross)}　已结 ${esc(x.settled)}</span>
+        <span class="amt">未结 ${esc(x.open)}</span>
+      </div>
+      <div class="cact" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">
+        <label class="muted">清账票面额 <input id="sa-${esc(x.file_hash)}" type="text" placeholder="默认全部 ${esc(x.open)}" style="width:120px"></label>
+        <label class="muted">${isAP?'实付':'实收'}现金 <input id="cash-${esc(x.file_hash)}" type="text" placeholder="必填" style="width:110px"></label>
+        <label class="muted">差额原因 <select id="reason-${esc(x.file_hash)}">${reasonOpts}</select></label>
+        <label class="muted">现金流活动 <select id="act-${esc(x.file_hash)}">
+          <option value="">自动（按发票性质）</option>
+          <option value="operating">经营活动</option>
+          <option value="investing">投资活动</option>
+          <option value="financing">筹资活动</option></select></label>
+        <button class="ok" onclick="doSettle('${esc(x.file_hash)}','${esc(x.open)}')">✓ 结算</button>
+      </div></div>`;
+  }
+  document.getElementById('body').innerHTML = h;
+}
+async function doSettle(fh, open){
+  const cash = (document.getElementById('cash-'+fh)||{}).value;
+  const sa = (document.getElementById('sa-'+fh)||{}).value;
+  const reason = (document.getElementById('reason-'+fh)||{}).value;
+  const act = (document.getElementById('act-'+fh)||{}).value;
+  if(!cash){ alert('请填写实际收/付现金金额'); return; }
+  const body = {file_hash:fh, cash_amount:cash, diff_reason:reason||undefined,
+                settle_amount:sa||undefined, activity:act||undefined,
+                tolerance:(reason==='rounding')?'1.00':undefined};
+  const r = await postJSON('/api/ledger/settle', body);
+  if(r&&r.entry_no){ alert('已结算，凭证号 '+r.entry_no); await loadSummary(); render(); }
+}
+
+async function renderEntries(){
+  const d = await getJSON('/api/ledger/entries');
+  const es = d.entries||[];
+  if(!es.length){ document.getElementById('body').innerHTML='<div class="empty">还没有已过账分录。</div>'; return; }
+  let h = '';
+  for(const e of es){
+    const canRev = e.status==='Posted' && e.source_kind!=='reversal';
+    h += `<div class="card">
+      <div class="chead">
+        <span class="badge b-${esc(e.status)}">${esc(e.status)}</span>
+        <span class="no">${esc(e.entry_no)}</span>
+        <span class="memo">${esc(e.date||'')}　${esc(e.memo||'')}</span>
+        <span class="amt">${esc(e.total)}</span>
+      </div>
+      ${jeTable(e.lines)}
+      ${canRev?`<div class="cact"><button class="no" onclick="doReverse('${esc(e.entry_no)}')">↩ 红冲</button></div>`:''}
+    </div>`;
+  }
+  document.getElementById('body').innerHTML = h;
+}
+async function doReverse(no){
+  if(!confirm('确认红冲分录 '+no+' ？将生成一张方向相反的冲销分录，原分录标记为已红冲。')) return;
+  const r = await postJSON('/api/ledger/reverse', {entry_no:no});
+  if(r&&r.reversal_no){ alert('已红冲，冲销凭证号 '+r.reversal_no); await loadSummary(); render(); }
+}
+
+async function renderTrial(){
+  const d = await getJSON('/api/ledger/trial-balance');
+  const rows = d.rows||[];
+  const warn = d.balanced ? '' : '<div class="warnbar">⚠ 试算不平衡！借贷合计不等，请核查（正常情况下不应出现）。</div>';
+  if(!rows.length){ document.getElementById('body').innerHTML='<div class="empty">账上还没有余额。</div>'; return; }
+  let h = warn + '<div class="tbcard"><table class="je"><tr><th>科目</th><th style="text-align:right">借方合计</th><th style="text-align:right">贷方合计</th></tr>';
+  for(const r of rows){
+    h += `<tr><td>${esc(r.account)}</td><td class="num">${esc(r.debit)}</td><td class="num">${esc(r.credit)}</td></tr>`;
+  }
+  h += `<tr class="tbfoot"><td>合计</td><td class="num">${esc(d.total_debit)}</td><td class="num">${esc(d.total_credit)}</td></tr>`;
+  h += '</table></div>';
+  document.getElementById('body').innerHTML = h;
+}
+
+function render(){
+  if(CUR==='postable') return renderPostable();
+  if(CUR==='open') return renderOpen();
+  if(CUR==='entries') return renderEntries();
+  return renderTrial();
+}
+(async function(){ renderTabs(); await loadSummary(); render(); })();
+</script>
+</body>
+</html>

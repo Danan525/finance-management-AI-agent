@@ -1,0 +1,27 @@
+{
+  "source": "outputs/bank_statement_simulation/bank_statement_training_data.json",
+  "transaction_count": 73,
+  "label_count": 73,
+  "invoice_count": 73,
+  "formats": [
+    "simulated_bank_statement_invoice_matching.xlsx",
+    "bank_statement_transactions.csv",
+    "bank_statement_transactions.tsv",
+    "bank_statement_transactions_fixed_width.txt",
+    "bank_statement_transactions.json",
+    "bank_statement_transactions.ndjson",
+    "bank_statement_transactions_excel_compatible.xls",
+    "bank_statement_transactions.pdf",
+    "bank_statement_transactions.ofx",
+    "bank_statement_transactions.qfx",
+    "bank_statement_transactions.qif",
+    "bank_statement_transactions.mt940",
+    "bank_statement_transactions.camt053.xml",
+    "match_labels.csv",
+    "invoice_index.csv"
+  ],
+  "pdf_check": {
+    "pages": 9,
+    "has_title": true
+  }
+}

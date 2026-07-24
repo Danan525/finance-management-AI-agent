@@ -1,0 +1,26 @@
+# 财务/隐私数据：绝不提交
+data/
+*.db
+*.sqlite*
+exports/
+uploads/
+
+# Python / 虚拟环境 / 缓存
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 打包/生成产物
+*.zip
+dist/
+build/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

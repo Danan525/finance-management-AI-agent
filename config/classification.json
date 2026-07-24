@@ -1,0 +1,213 @@
+{
+  "_README": "分类规则可配置文件。改这里即可定制你自己的科目表/关键词/供应商/固定资产阈值，无需改代码；删掉某个键=用内置默认；文件损坏=自动回退默认。改完重启服务(或调 rules.reload())生效。asset_thresholds 按币种设固定资产候选门槛(缺的币种用 default)。",
+  "category_rules": [
+    [
+      "management\\s*fee",
+      "Management Fee Expense",
+      "6020 Management Fee"
+    ],
+    [
+      "performance\\s*fee|incentive\\s*fee|carried\\s*interest",
+      "Performance Fee Expense",
+      "6030 Performance Fee"
+    ],
+    [
+      "service\\s*(fee|charge)",
+      "Service Fee Expense",
+      "6010 Service Fee"
+    ],
+    [
+      "professional\\s*fee",
+      "Professional Service",
+      "6410 Professional Fees"
+    ],
+    [
+      "legal\\s*(fee|service)|attorney|solicitor|\\bcounsel\\b",
+      "Legal Fees",
+      "6420 Legal Fees"
+    ],
+    [
+      "audit\\s*(fee|service)|auditor|assurance\\s*service",
+      "Audit Fees",
+      "6430 Audit Fees"
+    ],
+    [
+      "account(ing|ancy)\\s*(fee|service)?|bookkeep",
+      "Accounting Fees",
+      "6440 Accounting Fees"
+    ],
+    [
+      "tax\\s*(advisory|advis|filing|return|compliance|preparation)",
+      "Tax Advisory",
+      "6470 Tax Advisory"
+    ],
+    [
+      "consult(ing|ancy|ant)|advisory|advisor",
+      "Professional Service",
+      "6410 Professional Fees"
+    ],
+    [
+      "registration|incorporat|filing\\s*fee|licen[sc]e\\s*fee|licen[sc]ing|statutory|government\\s*fee|regulatory\\s*fee|annual\\s*return|company\\s*secretar",
+      "Government & Registration Fees",
+      "6460 Government & Registration Fees"
+    ],
+    [
+      "disbursement",
+      "Disbursements",
+      "6910 Disbursements"
+    ],
+    [
+      "sundry",
+      "Sundry Expenses",
+      "6900 Sundry Expenses"
+    ],
+    [
+      "subscription|software|licen[sc]e|saas|cloud|hosting|domain\\s*(name|renewal)?|api\\s*usage|storage\\s*plan|seat\\s*licen",
+      "Software & Cloud",
+      "6110 Software & Cloud"
+    ],
+    [
+      "bank\\s*(charge|fee)|wire\\s*(fee|charge)|remittance\\s*(fee|charge)|processing\\s*fee|transaction\\s*fee|merchant\\s*fee|payment\\s*processing|\\bfx\\s*fee|exchange\\s*fee",
+      "Bank/Processing Fee",
+      "6310 Bank Charges"
+    ],
+    [
+      "air\\s*fare|airfare|flight|\\btravel\\b|hotel|accommodation|lodging|per\\s*diem",
+      "Travel & Lodging",
+      "6220 Travel & Lodging"
+    ],
+    [
+      "taxi|ride[\\s-]*hail|mileage|\\btransport|parking|car\\s*rental|fuel\\b",
+      "Transportation",
+      "6210 Transportation"
+    ],
+    [
+      "\\bmeal|catering|restaurant|dining|entertainment",
+      "Meals & Entertainment",
+      "6230 Meals & Entertainment"
+    ],
+    [
+      "\\brent\\b|lease|office\\s*space|co-?working",
+      "Rent",
+      "6510 Rent"
+    ],
+    [
+      "utilit|electric|water\\s*(bill|charge)|gas\\s*(bill|charge)|power\\s*(bill|charge)",
+      "Utilities",
+      "6520 Utilities"
+    ],
+    [
+      "internet|broadband|telecom|telephone|mobile\\s*(plan|bill)|data\\s*plan|phone\\s*bill",
+      "Telecom & Internet",
+      "6530 Telecom & Internet"
+    ],
+    [
+      "insurance|\\bpremium\\b|indemnity",
+      "Insurance",
+      "6540 Insurance"
+    ],
+    [
+      "marketing|advertis|promotion|campaign|\\bads?\\b|sponsorship|\\bseo\\b|media\\s*buy",
+      "Marketing & Advertising",
+      "6610 Marketing & Advertising"
+    ],
+    [
+      "training|seminar|workshop|conference|course\\s*fee|certification|tuition",
+      "Training & Development",
+      "6620 Training & Development"
+    ],
+    [
+      "recruit|hiring|headhunt|staffing|placement\\s*fee",
+      "Recruitment",
+      "6720 Recruitment"
+    ],
+    [
+      "courier|shipping|postage|freight|delivery|logistics|customs\\s*clearance",
+      "Shipping & Courier",
+      "6320 Shipping & Courier"
+    ],
+    [
+      "interest\\s*(expense|charge|payable)|loan\\s*interest",
+      "Interest Expense",
+      "7010 Interest Expense"
+    ]
+  ],
+  "supplier_rules": [
+    [
+      "microsoft|\\baws\\b|amazon\\s*web|google\\s*cloud|\\bgcp\\b|azure|digitalocean|cloudflare|heroku|vercel|github|gitlab|atlassian|slack|zoom|notion|dropbox|openai|anthropic|datadog|twilio",
+      "Software & Cloud",
+      "6110 Software & Cloud"
+    ],
+    [
+      "uber|grab|didi|lyft|gojek|\\bbolt\\b|taxi",
+      "Transportation",
+      "6210 Transportation"
+    ],
+    [
+      "booking\\.com|expedia|agoda|marriott|hilton|hyatt|airbnb|\\bhotel\\b",
+      "Travel & Lodging",
+      "6220 Travel & Lodging"
+    ],
+    [
+      "stripe|paypal|wise|adyen|\\bsquare\\b|payoneer",
+      "Bank/Processing Fee",
+      "6310 Bank Charges"
+    ],
+    [
+      "fedex|\\bdhl\\b|\\bups\\b|sf\\s*express|aramex",
+      "Shipping & Courier",
+      "6320 Shipping & Courier"
+    ],
+    [
+      "linkedin|google\\s*ads|meta\\s*platforms|facebook|tiktok|hubspot|mailchimp",
+      "Marketing & Advertising",
+      "6610 Marketing & Advertising"
+    ]
+  ],
+  "asset_keywords": "laptop|equipment|device|server|hardware",
+  "asset_account": "1500 Fixed Assets",
+  "asset_category": "Fixed Asset (candidate)",
+  "asset_thresholds": {
+    "default": 3000,
+    "USD": 3000,
+    "EUR": 3000,
+    "GBP": 2500,
+    "HKD": 25000,
+    "CNY": 20000,
+    "SGD": 4000,
+    "TWD": 90000,
+    "JPY": 400000,
+    "KRW": 4000000,
+    "INR": 250000
+  },
+  "seed_pairs": [
+    [
+      "Professional Service",
+      "6410 Professional Fees"
+    ],
+    [
+      "Legal Fees",
+      "6420 Legal Fees"
+    ],
+    [
+      "Audit Fees",
+      "6430 Audit Fees"
+    ],
+    [
+      "Fund Administration",
+      "6050 Fund Admin"
+    ],
+    [
+      "Bank/Processing Fee",
+      "6310 Bank Charges"
+    ],
+    [
+      "Sundry Expenses",
+      "6900 Sundry Expenses"
+    ],
+    [
+      "Disbursements",
+      "6910 Disbursements"
+    ]
+  ]
+}

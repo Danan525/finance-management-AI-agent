@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>已学规则</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;font-size:14px;line-height:1.5}
+  header{background:#1f4e78;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:20}
+  header h1{font-size:19px;margin:0;font-weight:700;color:#fff}
+  header h1 small{font-size:12px;opacity:.85;color:#e6eef7}
+  .hnav{display:flex;gap:12px;flex-wrap:wrap}
+  .navbtn{background:#fff;color:#1f4e78;text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .navbtn:hover{background:#eef4fb}
+  .wrap{padding:18px;max-width:1080px;margin:0 auto}
+  .intro{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin-bottom:14px;font-size:13px;line-height:1.7;color:#475569}
+  .intro b{color:#1f4e78}
+  .scopekey{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+  .scopekey span{font-size:12px;padding:2px 8px;border-radius:10px}
+  .sc-one{background:#e7eef7;color:#1f4e78}
+  .sc-sim{background:#fff3da;color:#92400e}
+  .sc-all{background:#e7f6ec;color:#137333}
+  table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.06);border-radius:8px;overflow:hidden}
+  th{background:#1f4e78;color:#fff;font-size:12px;font-weight:600;text-align:left;padding:9px 10px}
+  td{font-size:14px;padding:10px;border-bottom:1px solid #eef1f4;vertical-align:top}
+  tbody tr:hover{background:#f7faff}
+  /* 「启用后会做什么」是本页核心信息，稍作强调 */
+  td:nth-child(2){color:#1f2d3d}
+  .tag{font-size:11px;padding:1px 7px;border-radius:8px;background:#e7eef7;color:#1f4e78;white-space:nowrap}
+  .tag.def{background:#eef2f7;color:#475569}
+  .tag.pend{background:#fde8e8;color:#b91c1c}
+  .tag.act{background:#e7f6ec;color:#137333}
+  .pendrow{background:#fffdf5}
+  .doact{white-space:normal}
+  .en{padding:6px 12px;border:0;border-radius:8px;color:#fff;cursor:pointer;font-size:12px;margin:0 4px 4px 0}
+  .en.one{background:#137333}
+  .en.all{background:#1f4e78}
+  .en .sub{display:block;font-size:10px;opacity:.85;font-weight:400}
+  .del{padding:6px 12px;border:1px solid #e0a0a0;background:#fff;color:#b91c1c;border-radius:8px;cursor:pointer;font-size:12px}
+  .edit{padding:6px 12px;border:1px solid #c7d2fe;background:#fff;color:#4338ca;border-radius:8px;cursor:pointer;font-size:12px;margin-right:6px}
+  .ltbtn{padding:7px 14px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-right:6px}
+  .ltbtn.on{background:#1f4e78;color:#fff;border-color:#1f4e78}
+  .rowhint{font-size:11px;color:#94a3b8;margin-top:2px}
+  .muted{color:#94a3b8;padding:20px}
+  .scopecell b{color:#1f4e78}
+</style>
+</head>
+<body>
+<header>
+  <h1>已学规则 <small style="font-weight:400">— 审核时确认/修改自动沉淀，供以后发票参考</small></h1>
+  <nav class="hnav">
+    <a href="/review" class="navbtn">← 回到审核</a>
+    <a href="/reconcile" class="navbtn">🔗 对账确认</a>
+    <a href="/ledger" class="navbtn">📒 总账</a>
+    <a href="/reports" class="navbtn">📊 财务报表</a>
+    <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
+  </nav>
+</header>
+<div class="wrap">
+  <div style="margin-bottom:12px">
+    <button id="lt-invoice" class="ltbtn on" onclick="setLType('invoice')">📄 发票规则</button>
+    <button id="lt-statement" class="ltbtn" onclick="setLType('statement')">🏦 流水规则</button>
+  </div>
+  <div class="intro">
+    这里是系统从你**审核时的确认/修改**里自动记下来的规则。它们<b>默认不生效</b>——你点<b>「启用」</b>后，才会在**以后的新发票**上作为<b>建议</b>帮你自动带出；系统<b>永远不会自动入账</b>，你仍要人工审核确认。学错了点「删除」即可。
+    <div class="scopekey">作用范围：
+      <span class="sc-one">仅这家开票方 = 只对这一个公司的发票生效</span>
+      <span class="sc-sim">内容相似 = 对内容相近的发票生效（不限公司）</span>
+      <span class="sc-all">所有发票通用 = 对所有发票生效（只有「字段线索」可选，适合像 Gross Total 这类通用标签）</span>
+    </div>
+  </div>
+  <table id="tbl"><thead><tr>
+    <th style="width:78px">状态</th><th>启用后会做什么</th><th style="width:190px">作用范围</th>
+    <th style="width:64px">确认</th><th style="width:140px">来源</th><th style="width:230px">操作</th>
+  </tr></thead><tbody id="tb"></tbody></table>
+  <div id="empty" class="muted" style="display:none">暂无已学规则。去审核页确认分类、修正某公司的字段、或在原件上框选填字段，就会自动沉淀到这里。</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+// 字段名中文（让描述看得懂）
+const FIELD_CN = {invoice_no:'发票号',invoice_date:'发票日期',payment_due_date:'到期日',
+  service_start:'服务起',service_end:'服务止',fund_valuation_date:'估值日',
+  currency_settlement:'结算币种',invoice_ccy_raw:'币种',currency_display_symbol:'币种符号',
+  issuer_name:'开票方',issuer_address:'开票方地址',issuer_email:'开票方邮箱',issuer_phone:'开票方电话',
+  customer_name:'客户',customer_address:'客户地址',contact_email:'客户邮箱',contact_phone:'客户电话',
+  subtotal:'税前金额',sales_tax:'税额',total_due:'总金额',payment_due:'应付金额',tax_rate:'税率',
+  bank_name:'开户行',bank_account_name:'户名',bank_account_no:'账号',bank_swift:'SWIFT'};
+const fn = k => FIELD_CN[k] || k;
+const SPLIT_CN = {newline:'按换行',numbered:'按编号(1. 2.)',bullet:'按项目符号(•)',
+  semicolon:'按分号(;)',pipe:'按竖线(|)',dash:'按破折号(-)'};
+
+// 每条规则「启用后会做什么」的大白话
+function describe(r){
+  if(r.note && r.note.trim()) return esc(r.note).replace(/\n/g,'<br>');  // 人工改写的整段说明优先
+  return describeAuto(r);
+}
+function describeAuto(r){
+  const co = `<b>${esc(r.match_key||'该开票方')}</b>`;
+  if(r.rule_type==='classification')
+    return `以后 ${co} 的发票，记账科目建议为 <b>${esc(r.category||'—')} / ${esc(r.account||'—')}</b>`;
+  if(r.rule_type==='content_class')
+    return `内容与「${esc((r.value||'').slice(0,28))}…」相近的发票，科目建议 <b>${esc(r.category||'—')} / ${esc(r.account||'—')}</b>`;
+  if(r.rule_type==='line_split')
+    return `以后 ${co} 的发票，大段明细<b>${esc(SPLIT_CN[r.target]||r.target)}</b>拆成多条`;
+  if(r.rule_type==='field_locator')
+    return `遇到标签「<b>${esc(r.value)}</b>」时，把它旁边的值自动填进 <b>${esc(fn(r.target))}</b>（现场核对，只补空/没把握的字段）`;
+  if(r.rule_type==='multi_invoice'){
+    const who = r.target ? `（如 ${esc(r.target)}）` : '';
+    return r.value==='single'
+      ? `以后遇到<b>同版面</b>的文件${who}，倾向<b>当作单张发票</b>、不自动拆分（软先验，仍会核对文档是否真有多发票边界）`
+      : `以后遇到<b>同版面</b>的文件${who}，倾向<b>当作多张发票</b>、更积极地尝试切分（软先验，找不到发票锚点仍按单张）`;
+  }
+  // field_default：核对后再填（不盲填）
+  const dv = (r.value||''); const dvShow = esc(dv.slice(0,44)) + (dv.length>44?'…':'');
+  return `以后 ${co} 的发票，<b>先核对</b>原件上是否出现「${dvShow}」，核对到了才填进 <b>${esc(fn(r.target))}</b>（不盲填）`;
+}
+
+// 作用范围（大白话 + 徽标）
+function scopeCell(r){
+  const isLoc = r.rule_type==='field_locator';
+  const pending = r.status!=='active';
+  if(r.rule_type==='content_class') return `<span class="tag sc-sim" style="background:#fff3da;color:#92400e">内容相似的发票</span>`;
+  if(r.rule_type==='multi_invoice') return `<span class="tag">同版面的文件<br><small class="scopecell">（版面指纹）</small></span>`;
+  if(isLoc){
+    if(pending) return `<span class="tag def">启用时由你选择 →</span>`;
+    return r.scope==='global'
+      ? `<span class="tag act">所有发票通用</span>`
+      : `<span class="tag">仅这家 / 同类版式<br><small class="scopecell">（${esc(r.match_key||'')}）</small></span>`;
+  }
+  // classification / field_default / line_split：按开票方
+  return `<span class="tag">仅这家开票方<br><small class="scopecell">（${esc(r.match_key||'')}）</small></span>`;
+}
+
+let RULES = [];
+// 整句可改：句子里每个可变部分都是内联输入框
+function _li(k,v,w){ return `<input data-k="${k}" value="${esc(v==null?'':v)}" style="width:${w||90}px;padding:1px 4px;font-size:14px">`; }
+function _lsel(k,v,opts){ return `<select data-k="${k}" style="font-size:14px">${opts.map(o=>`<option value="${o.v}"${v===o.v?' selected':''}>${o.t}</option>`).join('')}</select>`; }
+function editSentence(r){
+  const t=r.rule_type;
+  if(t==='classification') return `以后 ${_li('match_key',r.match_key,140)} 的发票，记账科目建议 ${_li('category',r.category,130)} / ${_li('account',r.account,150)}`;
+  if(t==='content_class') return `内容与「${_li('value',r.value,220)}」相近的发票，科目建议 ${_li('category',r.category,130)} / ${_li('account',r.account,150)}`;
+  if(t==='field_default') return `以后 ${_li('match_key',r.match_key,140)} 的发票，核对原件后自动把 ${_li('target',r.target,120)} 填为「${_li('value',r.value,160)}」`;
+  if(t==='field_locator') return `遇到标签「${_li('value',r.value,140)}」时，把它旁边的值填进 ${_li('target',r.target,120)}`;
+  if(t==='line_split') return `以后 ${_li('match_key',r.match_key,140)} 的发票，相似大段明细按此规律拆分：${_li('value',r.value,260)}`;
+  if(t==='multi_invoice') return `以后同版面的文件，倾向 ${_lsel('value',r.value,[{v:'single',t:'当作单张·不自动拆'},{v:'multi',t:'当作多张·更积极拆'}])}`;
+  return _li('value',r.value,260);
+}
+function _stripTags(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||''; }
+function editRule(id){
+  const r = RULES.find(x=>x.id===id); if(!r) return;
+  const noteText = esc((r.note && r.note.trim()) ? r.note : _stripTags(describeAuto(r)));
+  const ov=document.createElement('div'); ov.id='editov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;justify-content:center;align-items:center;z-index:50';
+  ov.innerHTML=`<div style="background:#fff;border-radius:12px;padding:18px 20px;max-width:560px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.28)">
+    <b>✎ 修改这条规则</b>
+    <div style="font-size:13px;color:#64748b;margin:12px 0 4px">这段话怎么写都行（随便改），写完点下面按钮让系统读懂它：</div>
+    <textarea data-k="note" rows="3" style="width:100%;font-size:14px;box-sizing:border-box">${noteText}</textarea>
+    <button class="en one" style="margin-top:6px" onclick="parseRuleText(${id})">🔍 解析这句话 → 变成规则</button>
+    <div id="lparse" style="font-size:13px;margin:6px 0"></div>
+    <div style="font-size:13px;color:#64748b;margin:12px 0 4px">系统读懂后填在这里（确认无误、或直接手动改这几处才真正影响识别）：</div>
+    <div style="line-height:2.4">${editSentence(r)}</div>
+    <div style="display:flex;gap:10px;margin-top:12px"><button class="en one" onclick="saveRule(${id})">保存</button>
+      <button class="del" onclick="document.getElementById('editov').remove()">取消</button></div></div>`;
+  document.body.appendChild(ov);
+}
+async function parseRuleText(id){
+  const ov=document.getElementById('editov'); const st=document.getElementById('lparse');
+  const ta=ov.querySelector('textarea[data-k="note"]'); const text=ta?ta.value.trim():'';
+  if(!text){ st.innerHTML='<span style="color:#b45309">先写点内容再解析</span>'; return; }
+  const d=await (await fetch('/api/learned/'+id+'/parse',
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})})).json();
+  Object.keys(d.fields||{}).forEach(k=>{
+    if(k==='note') return;
+    const el=ov.querySelector('[data-k="'+k+'"]:not(textarea)');
+    if(el) el.value=d.fields[k];
+  });
+  let msg='';
+  if((d.understood||[]).length) msg+='<span style="color:#15803d">✅ 读懂：'+d.understood.join('；')+'</span>';
+  if((d.missing||[]).length) msg+=(msg?'<br>':'')+'<span style="color:#b45309">⚠️ 没读出：'+d.missing.join('、')+'（请手动填下面对应空格）</span>';
+  st.innerHTML=msg||'<span style="color:#64748b">没解析到可用要素</span>';
+}
+async function saveRule(id){
+  const ov=document.getElementById('editov'); const patch={};
+  ov.querySelectorAll('[data-k]').forEach(el=>{ patch[el.dataset.k]=el.value.trim(); });
+  const d=await (await fetch('/api/learned/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)})).json();
+  if(!d.updated){ alert('保存失败'); return; }
+  ov.remove(); load();
+}
+
+let LTYPE='invoice';
+function setLType(t){
+  LTYPE=t;
+  document.getElementById('lt-invoice').classList.toggle('on', t==='invoice');
+  document.getElementById('lt-statement').classList.toggle('on', t==='statement');
+  load();
+}
+async function load(){
+  const d = await (await fetch('/api/learned?doc_type='+LTYPE)).json();
+  const tb = document.getElementById('tb'); tb.innerHTML='';
+  const rules = d.rules || [];
+  RULES = rules;
+  document.getElementById('empty').style.display = rules.length ? 'none' : 'block';
+  for(const r of rules){
+    const isLoc = r.rule_type==='field_locator';
+    const pending = r.status!=='active';
+    const statusTag = pending ? `<span class="tag pend">待确认</span>` : `<span class="tag act">已启用</span>`;
+    // 操作区：把"作用范围"直接做进按钮文字，点哪个 = 选哪个范围，不会点错
+    let ops = '';
+    if(pending){
+      if(isLoc){
+        ops = `<button class="en one" onclick="enable(${r.id})">启用<span class="sub">只用这家开票方</span></button>`
+            + `<button class="en all" onclick="enableGlobal(${r.id})">启用<span class="sub">所有发票通用</span></button>`
+            + `<div class="rowhint">拿不准就选「只用这家」更稳；像 Gross Total 这类通用标签才选「所有发票通用」。</div>`;
+      } else {
+        ops = `<button class="en one" onclick="enable(${r.id})">启用<span class="sub">${r.rule_type==='content_class'?'内容相似的发票':(r.rule_type==='multi_invoice'?'同版面的文件':'仅这家开票方')}</span></button>`;
+      }
+    } else {
+      ops = `<span class="tag act">已启用</span> `;
+    }
+    ops += `<button class="edit" onclick="editRule(${r.id})">✎ 修改</button>`;
+    ops += `<button class="del" onclick="del(${r.id})">删除</button>`;
+    const tr = document.createElement('tr');
+    if(pending) tr.className = 'pendrow';
+    tr.innerHTML = `<td>${statusTag}</td>
+      <td>${describe(r)}</td>
+      <td>${scopeCell(r)}</td>
+      <td style="text-align:center">×${r.confirm_count||1}</td>
+      <td><small>${esc(r.confirmed_by||'')}<br><span style="color:#94a3b8">${esc((r.confirmed_at||'').slice(0,16).replace('T',' '))}</span></small></td>
+      <td class="doact">${ops}</td>`;
+    tb.appendChild(tr);
+  }
+}
+async function enable(id){
+  const r = await (await fetch('/api/learned/'+id+'/enable', {method:'POST'})).json();
+  if(r.error){ alert('启用失败：'+r.error); return; }
+  load();
+}
+async function enableGlobal(id){
+  if(!confirm('启用为【所有发票通用】？\n\n以后任何公司的发票，只要出现这个标签，就会用它来填对应字段（仍会逐张核对、只补空/没把握的字段，不覆盖已确定的值）。\n\n如果只想用于这一家，请改点绿色的「只用这家开票方」。')) return;
+  const r = await (await fetch('/api/learned/'+id+'/enable-global', {method:'POST'})).json();
+  if(r.error){ alert('启用失败：'+r.error); return; }
+  load();
+}
+async function del(id){
+  if(!confirm('删除这条已学规则？删除后新发票将不再自动带出它。')) return;
+  const r = await (await fetch('/api/learned/'+id+'/delete', {method:'POST'})).json();
+  if(r.error){ alert('删除失败：'+r.error); return; }
+  load();
+}
+load();
+</script>
+<button id="toTop" title="回到顶部" onclick="__toTop()">↑ 顶部</button>
+<style>#toTop{position:fixed;right:18px;bottom:18px;z-index:9999;display:none;padding:9px 13px;border:0;border-radius:22px;background:#1f4e78;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}#toTop:hover{background:#163a5a}</style>
+<script>
+(function(){
+  var SC='#queue,.qcol,.detail,.fields,.orig,#list,main,.list,.layout';
+  function conts(){return [document.scrollingElement||document.documentElement].concat([].slice.call(document.querySelectorAll(SC)));}
+  window.__toTop=function(){conts().forEach(function(el){try{el.scrollTo({top:0,behavior:'smooth'});}catch(e){if(el)el.scrollTop=0;}});};
+  function upd(){var b=document.getElementById('toTop');if(!b)return;var on=false;conts().forEach(function(el){if(el&&el.scrollTop>200)on=true;});b.style.display=on?'block':'none';}
+  document.addEventListener('scroll',upd,true);window.addEventListener('resize',upd);setInterval(upd,600);
+})();
+</script>
+</body>
+</html>

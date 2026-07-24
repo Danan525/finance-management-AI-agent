@@ -1,0 +1,5 @@
+# OCR 兜底依赖（Apple Silicon / 任何 paddlepaddle 装不上的平台）。
+# 用 RapidOCR(onnxruntime)：不依赖 paddlepaddle，模型随包分发、无需联网下载，
+# 识别用的是同一套 PP-OCR 模型，效果与 PaddleOCR 基本一致。
+rapidocr-onnxruntime==1.4.4
+Pillow==11.1.0

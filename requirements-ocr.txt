@@ -1,0 +1,10 @@
+# OCR 兜底依赖（仅处理扫描件/图片时需要；体积较大，按需安装）。
+# 注意：numpy 必须 <2（paddlepaddle 2.6.2 不兼容 numpy 2）；用 headless opencv 避免 libGL 系统库依赖。
+# Apple Silicon (M 系列) 若装不上 paddlepaddle，可跳过本文件，文本型 PDF 仍可正常使用。
+paddlepaddle==2.6.2
+paddleocr==2.9.1
+numpy==1.26.4
+opencv-contrib-python-headless==4.10.0.84
+Pillow==11.1.0
+setuptools
+wheel

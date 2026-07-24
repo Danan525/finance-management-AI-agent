@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>重复发票对比确认</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;font-size:14px;line-height:1.5;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  header{background:#1f4e78;color:#fff;padding:14px 20px;flex:none;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:700;color:#fff}
+  header h1 small{font-size:12px;opacity:.85;color:#e6eef7}
+  .hnav{display:flex;gap:12px;flex-wrap:wrap}
+  .navbtn{background:#fff;color:#1f4e78;text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .navbtn:hover{background:#eef4fb}
+  #banner{padding:9px 20px;font-size:13px;display:none;flex:none}
+  #banner.dup{background:#fde8e8;color:#b91c1c;display:block}
+  #banner.ok{background:#e7f6ec;color:#137333;display:block}
+  .layout{display:flex;flex:1;min-height:0}
+  .pane{padding:14px;overflow:auto}
+  .left{flex:none;width:42%;border-right:2px solid #cbd5e1;background:#eef2f7}
+  .right{flex:1;background:#f8fafc}
+  .panetitle{font-size:14px;font-weight:700;margin:0 0 8px;color:#1f2d3d}
+  .sub{font-size:12px;color:#64748b;margin-bottom:8px}
+  /* 右侧：横向滑动的候选卡片 */
+  .strip{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;align-items:flex-start}
+  .card{flex:0 0 auto;width:340px;background:#fff;border:1px solid #d8dee6;border-radius:10px;padding:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+  .card.confirmed{border-color:#c62828;box-shadow:0 0 0 2px rgba(198,40,40,.3)}
+  .card.notdup{border-color:#137333;opacity:.7}
+  .card h3{font-size:13px;margin:0 0 2px;word-break:break-all}
+  .reason{display:inline-block;font-size:11px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;margin-bottom:6px}
+  .reason.identical{background:#fde8e8;color:#b91c1c}
+  .doc{background:#52555a;padding:8px;border-radius:6px;text-align:center;max-height:62vh;overflow:auto}
+  .doc img{max-width:100%;display:block;margin:0 auto 8px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .left .doc{max-height:calc(100vh - 170px)}
+  .btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  button{flex:1 1 46%;padding:8px 10px;border:1px solid #bbb;border-radius:8px;cursor:pointer;font-size:13px}
+  .yes{background:#c62828;color:#fff;border-color:#c62828}
+  .no{background:#fff;color:#137333;border-color:#137333}
+  .del{background:#fff;color:#b91c1c;border-color:#e0a0a0}
+  .keep{background:#1f4e78;color:#fff;border-color:#1f4e78}
+  .clean{flex:1 1 100%;background:#137333;color:#fff;border-color:#137333}
+  .verdict{font-size:12px;margin-top:6px;font-weight:700}
+  .muted{color:#94a3b8;padding:20px}
+  pre{background:#fff;border:1px solid #ccc;padding:8px;white-space:pre-wrap;word-break:break-all;font-size:12px;text-align:left}
+</style>
+</head>
+<body>
+<header>
+  <h1>重复发票对比确认 <small>左=本次上传 · 右=疑似重复（可左右滑动）</small></h1>
+  <nav class="hnav">
+    <a href="review" class="navbtn">← 回到审核</a>
+    <a href="/" class="navbtn">← 回到上传</a>
+  </nav>
+</header>
+<div id="banner"></div>
+<div class="layout">
+  <div class="pane left">
+    <p class="panetitle">本次上传</p>
+    <div id="cur-sub" class="sub"></div>
+    <div id="cur-tools" class="btns" style="flex-wrap:wrap;margin:0 0 8px"></div>
+    <div id="cur-doc" class="doc"><div class="muted">加载中…</div></div>
+  </div>
+  <div class="pane right">
+    <p class="panetitle">疑似重复（<span id="cnt">…</span> 项）</p>
+    <div class="sub">逐个核对，确认是否真的与本次上传重复。</div>
+    <div id="strip" class="strip"></div>
+  </div>
+</div>
+
+<script>
+const HASH = new URLSearchParams(location.search).get('hash');
+let GROUP = [];   // 本组全部记录 hash（本次上传 + 各疑似重复），供"只保留一张·删其余"
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+// 渲染某 hash 的原件（按页数生成图片；失败退回归档文本）
+async function docHtml(hash){
+  let pages = 1, raw = '';
+  try{
+    const d = await (await fetch('/api/review/' + encodeURIComponent(hash))).json();
+    pages = (d.page_sizes && d.page_sizes.length) ? d.page_sizes.length : 1;
+    raw = d.raw_pdf_text || d.raw_ocr_text || '';
+  }catch(e){}
+  let imgs = '';
+  for(let p = 0; p < pages; p++){
+    imgs += `<img src="/api/review/${encodeURIComponent(hash)}/page/${p}" onerror="this.remove()">`;
+  }
+  return imgs || `<pre>${esc(raw) || '（无原件可显示）'}</pre>`;
+}
+
+async function load(){
+  if(!HASH){ document.getElementById('strip').innerHTML = '<div class="muted">缺少参数 hash</div>'; return; }
+  const meta = await (await fetch('/api/review/' + encodeURIComponent(HASH) + '/duplicates')).json();
+  if(meta.error){ document.getElementById('strip').innerHTML = '<div class="muted">' + esc(meta.error) + '</div>'; return; }
+  document.getElementById('cur-sub').innerHTML =
+    `<b>${esc(meta.file_name)}</b><br>发票号：${esc(meta.invoice_no || '—')}`;
+  document.getElementById('cur-doc').innerHTML = await docHtml(HASH);
+
+  const cands = meta.candidates || [];
+  document.getElementById('cnt').textContent = cands.length;
+  const strip = document.getElementById('strip');
+  // 这一组的全部记录（本次上传 + 各候选），供"只保留一张·删其余"
+  GROUP = [HASH].concat(cands.map(c => c.file_hash));
+  // 组里是否有"已入账(Approved)"的记录（本次上传或某候选）
+  const hasApproved = (meta.approve_status === 'Approved') ||
+                      cands.some(c => c.approve_status === 'Approved');
+  // 本次上传（左侧）的操作条：删除本张 / 只保留本张删其余 / 组内有已入账则一键清未入账
+  const curTb = document.getElementById('cur-tools');
+  curTb.innerHTML = `
+    <button class="del" onclick="delOne('${esc(HASH)}', true)">🗑 删除本次上传</button>
+    ${cands.length ? `<button class="keep" onclick="keepOnly('${esc(HASH)}')">★ 只保留本次上传·删除其余 ${cands.length} 条重复</button>` : ''}
+    ${hasApproved ? `<button class="clean" onclick="dropUnapproved()">🧹 已和入账的重复 · 删除所有未入账的重复（保留已入账）</button>` : ''}`;
+  if(!cands.length){ strip.innerHTML = '<div class="muted">没有可对比的疑似重复记录。</div>'; return; }
+  strip.innerHTML = '';
+  for(let i = 0; i < cands.length; i++){
+    const c = cands[i];
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.against = c.file_hash;
+    card.innerHTML = `
+      <h3>${esc(c.file_name)}</h3>
+      <span class="reason ${c.identical_file ? 'identical' : ''}">${esc(c.reason)}</span>
+      ${c.approve_status === 'Approved' ? '<span class="reason" style="background:#e7f6ec;color:#137333">✓ 已入账</span>' : ''}
+      <div class="doc">加载中…</div>
+      <div class="btns">
+        <button class="yes" onclick="resolve('${esc(c.file_hash)}', true, this)">确认重复</button>
+        <button class="no" onclick="resolve('${esc(c.file_hash)}', false, this)">不是重复</button>
+        <button class="del" onclick="delOne('${esc(c.file_hash)}', false)">🗑 删除这条</button>
+        <button class="keep" onclick="keepOnly('${esc(c.file_hash)}')">★ 保留这张·删其余重复</button>
+      </div>
+      <div class="verdict"></div>`;
+    strip.appendChild(card);
+    docHtml(c.file_hash).then(h => { card.querySelector('.doc').innerHTML = h; });
+  }
+}
+
+// 删单条重复记录（已通过的会被后端拒绝、不会误删）
+async function delOne(hash, isCurrent){
+  if(!confirm('确定删除这条记录？（已确认入账的不会被删）')) return;
+  const r = await fetch('/api/review/' + encodeURIComponent(hash) + '/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'reviewer', reason:'duplicate'})});
+  const d = await r.json();
+  if(!r.ok || d.error){ alert('删除失败：' + (d.error||'（可能已确认入账，需走红冲/拒绝）')); return; }
+  if(isCurrent){ alert('已删除本次上传。'); location.href = 'review'; return; }
+  load();   // 重新加载对比（该候选已消失）
+}
+
+// 组里已有入账记录 → 删除所有未入账的重复，保留已入账
+async function dropUnapproved(){
+  if(!confirm('本组已有【已入账】的发票。\n将删除所有【未入账】的重复（含本次上传，如它未入账），保留已入账的。\n确定？')) return;
+  const r = await fetch('/api/review/drop-unapproved', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({group: GROUP, by:'reviewer'})});
+  const d = await r.json();
+  if(!r.ok || d.error){ alert('操作失败：' + (d.error||'')); return; }
+  alert(`已删除 ${d.deleted.length} 条未入账的重复，保留已入账 ${d.kept.length} 张。`);
+  if(d.deleted.includes(HASH)) location.href = 'review';   // 本次上传被删（未入账）→ 回审核
+  else load();
+}
+
+// 只保留一张，删除本组其余重复
+async function keepOnly(keepHash){
+  const others = GROUP.filter(h => h !== keepHash);
+  if(!others.length){ alert('本组只有一张，无需去重。'); return; }
+  if(!confirm(`将只保留 1 张、删除其余 ${others.length} 条重复。\n（已确认入账的会跳过、不删）\n确定？`)) return;
+  const r = await fetch('/api/review/dedupe', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({keep: keepHash, group: GROUP, by:'reviewer'})});
+  const d = await r.json();
+  if(!r.ok || d.error){ alert('去重失败：' + (d.error||'')); return; }
+  let msg = `已删除 ${d.deleted.length} 条重复，保留 1 张。`;
+  if(d.skipped && d.skipped.length) msg += `\n有 ${d.skipped.length} 条已确认入账，未删（如需作废请走红冲/拒绝）。`;
+  alert(msg);
+  if(keepHash === HASH) load();          // 保留的是本次上传 → 刷新对比
+  else location.href = 'review';         // 保留的是某候选、本次上传可能已删 → 回审核
+}
+
+async function resolve(against, isDup, btn){
+  const card = btn.closest('.card');
+  const r = await fetch('/api/review/' + encodeURIComponent(HASH) + '/duplicate', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({against, is_duplicate: isDup, by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('操作失败：' + d.error); return; }
+  card.classList.add(isDup ? 'confirmed' : 'notdup');
+  card.querySelector('.verdict').textContent = isDup ? '✓ 已确认重复' : '— 已标记为不重复';
+  card.querySelectorAll('button').forEach(b => b.disabled = true);
+  const banner = document.getElementById('banner');
+  if(isDup){
+    banner.className = 'dup';
+    banner.textContent = '已确认重复：本次上传（' + (d.approve_status || 'Rejected') + '）已按重复发票拒绝，不会重复入账。';
+  }else if(banner.className !== 'dup'){
+    banner.className = 'ok';
+    banner.textContent = '已记录“不是重复”的人工判断（留痕）。';
+  }
+}
+
+load();
+</script>
+<button id="toTop" title="回到顶部" onclick="__toTop()">↑ 顶部</button>
+<style>#toTop{position:fixed;right:18px;bottom:18px;z-index:9999;display:none;padding:9px 13px;border:0;border-radius:22px;background:#1f4e78;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}#toTop:hover{background:#163a5a}</style>
+<script>
+(function(){
+  var SC='#queue,.qcol,.detail,.fields,.orig,#list,main,.list,.layout';
+  function conts(){return [document.scrollingElement||document.documentElement].concat([].slice.call(document.querySelectorAll(SC)));}
+  window.__toTop=function(){conts().forEach(function(el){try{el.scrollTo({top:0,behavior:'smooth'});}catch(e){if(el)el.scrollTop=0;}});};
+  function upd(){var b=document.getElementById('toTop');if(!b)return;var on=false;conts().forEach(function(el){if(el&&el.scrollTop>200)on=true;});b.style.display=on?'block':'none';}
+  document.addEventListener('scroll',upd,true);window.addEventListener('resize',upd);setInterval(upd,600);
+})();
+</script>
+</body>
+</html>

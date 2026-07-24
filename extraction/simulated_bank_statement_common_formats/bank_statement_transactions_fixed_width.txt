@@ -1,0 +1,75 @@
+transaction_id        transaction_value_date  currencydebit_amount  credit_amount closing_balance counterparty_name               bank_reference                            simulated_match_invo
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+TXN-20250203-0001     2025-02-03  2025-02-04  GBP          217000.00          0.00       173000.00Greyvane Partners               PAY GP-2025-1001 Greyvane Partners        GP-2025-1001        
+TXN-20250217-0002     2025-02-17  2025-02-17  AUD           92000.00          0.00       428000.00Thornfield Advisory Ltd         INV TAL-2025-1000 SETTLEMENT              TAL-2025-1000       
+TXN-20250331-0003     2025-03-31  2025-03-31  SGD          135000.00          0.00       225000.00Aspen Hill Partners LLP         PAY AHP-2025-1018 Aspen Hill Partners LLP AHP-2025-1018       
+TXN-20250407-0004     2025-04-07  2025-04-08  EUR           86400.00          0.00       333600.00Ardent Financial Solutions      PAY AFS-2025-1005 Ardent Financial SolutioAFS-2025-1005       
+TXN-20250430-0005     2025-04-30  2025-04-30  AUD          280025.00          0.00       147975.00Vantage Advisory Partners       INV VAP-2025-1006 SETTLEMENT              VAP-2025-1006       
+TXN-20250509-0006     2025-05-09  2025-05-09  SGD           67850.00          0.00       157150.00Bridgestone Advisory Ltd        AP-BAL-2025-1015-Bridgestone Advisory Ltd BAL-2025-1015       
+TXN-20250523-0007     2025-05-23  2025-05-23  USD          109620.00          0.00       640380.00Kestrel Capital Services        AP-KCS-2025-1004-Kestrel Capital Services KCS-2025-1004       
+TXN-20250623-0008     2025-06-23  2025-06-24  SGD          219650.00          0.00       -62500.00Crestline Management Ltd        INV CML-2025-1009 SETTLEMENT              CML-2025-1009       
+TXN-20250710-0009     2025-07-10  2025-07-10  AUD          111650.00          0.00        36325.00Meridian Edge Advisors          AP-MEA-2025-1017-Meridian Edge Advisors   MEA-2025-1017       
+TXN-20250715-0010     2025-07-15  2025-07-15  GBP          142450.00          0.00        30550.00Crestone Wealth Management      Crestone Wealth Management / CWM-2025-1019CWM-2025-1019       
+TXN-20250901-0011     2025-09-01  2025-09-01  USDT          24946.34          0.00       225053.66Stellar Vista Partners Limited  AP-001001-Stellar Vista Partners L        001001              
+TXN-20251219-0012     2025-12-19  2025-12-19  USD          148500.00          0.00       491880.00Sable Point Partners            INV SPP-2025-1011 SETTLEMENT              SPP-2025-1011       
+TXN-20260101-0013     2026-01-01  2026-01-01  GBP          153450.00          0.00      -122900.00Northgate Strategy Corp.        AP-NSC-2025-1016-Northgate Strategy Corp. NSC-2025-1016       
+TXN-20260120-0014     2026-01-20  2026-01-20  EUR           63800.00          0.00       269800.00Halcyon Consulting Group        PAY HCG-2025-1002 Halcyon Consulting GroupHCG-2025-1002       
+TXN-20260121-0015     2026-01-21  2026-01-22  AUD           62500.00          0.00       -26175.00Irongate Advisory GmbH          INV IAG-2025-1010 SETTLEMENT              IAG-2025-1010       
+TXN-20260324-0016     2026-03-24  2026-03-24  EUR          107500.00          0.00       162300.00Ellsworth & Moore LLP           PAY EML-2026-1008 Ellsworth & Moore LLP   EML-2026-1008       
+TXN-20260408-0017     2026-04-08  2026-04-08  GBP           89700.00          0.00      -212600.00Redwood Strategy Inc.           Redwood Strategy Inc. / RSI-2026-1003     RSI-2026-1003       
+TXN-20260427-0018     2026-04-27  2026-04-27  USDT          21000.00          0.00       204053.66SignalPlus Limited              INV 555008 SETTLEMENT                     555008              
+TXN-20260505-0019     2026-05-05  2026-05-05  USD            3200.00          0.00       488680.00North Pier Strategy             North Pier Strategy / NP-2605-002         NP-2605-002         
+TXN-20260507-0020     2026-05-07  2026-05-07  USD          103400.00          0.00       385280.00Caraway Capital Ltd             AP-CCL-2026-1012-Caraway Capital Ltd      CCL-2026-1012       
+TXN-20260507-0021     2026-05-07  2026-05-07  USDC           2850.00          0.00       247150.00Chain Ops Analytics Pte Ltd     PAY COA-0526-04 Chain Ops Analytics Pte LtCOA-0526-04         
+TXN-20260508-0022     2026-05-08  2026-05-09  USD            3680.50          0.00       381599.50Pixel Forge Design Co           AP-PFD-2026-55-Pixel Forge Design Co      PFD-2026-55         
+TXN-20260511-0023     2026-05-11  2026-05-11  USD             854.93          0.00       380744.57CloudDock SaaS Inc              AP-CD-INV-7731-CloudDock SaaS Inc         CD-INV-7731         
+TXN-20260511-0024     2026-05-11  2026-05-11  USD            4500.00          0.00       376244.57Delta CFO Advisory              AP-DELTA-2026-05-R-Delta CFO Advisory     DELTA-2026-05-R     
+TXN-20260512-0025     2026-05-12  2026-05-12  USD            2750.00          0.00       373494.57Blue Peak Legal LLP             AP-BPL-2026-091-Blue Peak Legal LLP       BPL-2026-091        
+TXN-20260513-0026     2026-05-13  2026-05-13  AUD          120450.00          0.00      -146625.00Fairwater Group Inc.            AP-FGI-2026-1014-Fairwater Group Inc.     FGI-2026-1014       
+TXN-20260514-0027     2026-05-14  2026-05-14  USD             448.12          0.00       373046.45Emerald Office Supplies         PAY EOS-90031 Emerald Office Supplies     EOS-90031           
+TXN-20260515-0028     2026-05-15  2026-05-15  USD            3570.00          0.00       369476.45Atlas Compliance Partners Ltd   PAY ATL-2026-0501 Atlas Compliance PartnerATL-2026-0501       
+TXN-20260515-0029     2026-05-15  2026-05-15  USD             355.00          0.00       369121.45Maple Courier                   Maple Courier / MC-15-0526                MC-15-0526          
+TXN-20260518-0030     2026-05-18  2026-05-18  USD            1100.00          0.00       368021.45Keystone Data Rooms             PAY KDR-2026-778 Keystone Data Rooms      KDR-2026-778        
+TXN-20260519-0031     2026-05-19  2026-05-19  USD             440.00          0.00       367581.45Quarry Cafe Meetings            AP-QCM-2026-519-Quarry Cafe Meetings      QCM-2026-519        
+TXN-20260520-0032     2026-05-20  2026-05-21  HKD           11958.30          0.00       368041.70Jade Event Logistics            Jade Event Logistics / JEL-2662           JEL-2662            
+TXN-20260525-0033     2026-05-25  2026-05-25  USD            1650.00          0.00       365931.45Harbor Ledger Services          AP-HLS-2026-118-Harbor Ledger Services    HLS-2026-118        
+TXN-20260525-0034     2026-05-25  2026-05-25  USD             936.00          0.00       364995.45Orchid HR Payroll               Orchid HR Payroll / OHR-2026-117          OHR-2026-117        
+TXN-20260525-0035     2026-05-25  2026-05-26  USD            5900.00          0.00       359095.45Pioneer Tax Services            AP-PTS-2026-1888-Pioneer Tax Services     PTS-2026-1888       
+TXN-20260527-0036     2026-05-27  2026-05-27  EUR            2730.00          0.00       159570.00Nord Analytics GmbH             INV NA-2026-0516 SETTLEMENT               NA-2026-0516        
+TXN-20260529-0037     2026-05-29  2026-05-29  USD            1725.00          0.00       357370.45Glasshouse Training Group       INV PRO-2026-05-11 SETTLEMENT             PRO-2026-05-11      
+TXN-20260601-0038     2026-06-01  2026-06-01  USD            5360.00          0.00       352010.45Lantern Audit Support           Lantern Audit Support / LAS-2026-0140     LAS-2026-0140       
+TXN-20260603-0039     2026-06-03  2026-06-03  USD            2850.00          0.00       349160.45Frontier Risk Consulting        INV FRC-2026-144 SETTLEMENT               FRC-2026-144        
+TXN-20260605-0040     2026-06-05  2026-06-05  USD            1800.00          0.00       347360.45Summit Governance Labs          INV SGL-2026-0520 SETTLEMENT              SGL-2026-0520       
+TXN-20260616-0041     2026-06-16  2026-06-17  USD            2192.71          0.00       345167.74Apex Field Services Inc.        INV SIM-2026-002 SETTLEMENT               SIM-2026-002        
+TXN-20260617-0042     2026-06-17  2026-06-17  USD            2418.99          0.00       342748.75Pioneer Audit Services LLC      AP-SIM-2026-005-Pioneer Audit Services L  SIM-2026-005        
+TXN-20260622-0043     2026-06-22  2026-06-22  SGD          105000.00          0.00      -167500.00Paragon Fiduciary Ltd           INV PFL-2026-1007 SETTLEMENT              PFL-2026-1007       
+TXN-20260624-0044     2026-06-24  2026-06-25  USD           10295.00          0.00       332453.75Ogier                           PAY 6024081 Ogier                         6024081             
+TXN-20260624-0045     2026-06-24  2026-06-25  USD            2111.90          0.00       330341.85Northbridge Labs LLC            AP-SIM-2026-007-Northbridge Labs LLC      SIM-2026-007        
+TXN-20260625-0046     2026-06-25  2026-06-25  USD            2806.89          0.00       327534.96Northbridge Labs LLC            Northbridge Labs LLC / SIM-2026-001       SIM-2026-001        
+TXN-20260626-0047     2026-06-26  2026-06-26  USD            3539.59          0.00       323995.37Cedarline Systems LLC           INV SIM-2026-003 SETTLEMENT               SIM-2026-003        
+TXN-20260626-0048     2026-06-26  2026-06-26  USD            3163.54          0.00       320831.83Gridline Analytics Ltd.         Gridline Analytics Ltd. / SIM-2026-006    SIM-2026-006        
+TXN-20260706-0049     2026-07-06  2026-07-07  EUR          142000.00          0.00        17570.00Oakhurst Consulting Pte. Ltd.   PAY OCP-2026-1013 Oakhurst Consulting Pte.OCP-2026-1013       
+TXN-20260706-0050     2026-07-06  2026-07-07  USD            2265.00          0.00       318566.83Summit Ridge Operations LLC     Summit Ridge Operations LLC / SIM-2026-004SIM-2026-004        
+TXN-20260706-0051     2026-07-06  2026-07-06  USD            2338.18          0.00       316228.65Summit Ridge Operations LLC     PAY SIM-2026-010 Summit Ridge Operations LSIM-2026-010        
+TXN-20260706-0052     2026-07-06  2026-07-07  USD            2413.60          0.00       313815.05SHEET Invoice                   SHEET Invoice / SIM-2026-021              SIM-2026-021        
+TXN-20260710-0053     2026-07-10  2026-07-11  USD            2203.49          0.00       311611.56Apex Field Services Inc.        INV SIM-2026-014 SETTLEMENT               SIM-2026-014        
+TXN-20260710-0054     2026-07-10  2026-07-10  USD            1811.00          0.00       309800.56Summit Ridge Operations LLC     PAY SIM-2026-016 Summit Ridge Operations LSIM-2026-016        
+TXN-20260713-0055     2026-07-13  2026-07-14  USD            2170.00          0.00       307630.56Apex Field Services Inc.        PAY SIM-2026-008 Apex Field Services Inc. SIM-2026-008        
+TXN-20260713-0056     2026-07-13  2026-07-13  USD            2953.43          0.00       304677.13Cedarline Systems LLC           PAY SIM-2026-015 Cedarline Systems LLC    SIM-2026-015        
+TXN-20260713-0057     2026-07-13  2026-07-14  USD            2602.16          0.00       302074.97SHEET Invoice                   AP-SIM-2026-022-SHEET Invoice             SIM-2026-022        
+TXN-20260715-0058     2026-07-15  2026-07-16  USD            1735.00          0.00       300339.97SHEET Invoice                   AP-SIM-2026-023-SHEET Invoice             SIM-2026-023        
+TXN-20260716-0059     2026-07-16  2026-07-16  USD            2926.49          0.00       297413.48Cedarline Systems LLC           PAY SIM-2026-009 Cedarline Systems LLC    SIM-2026-009        
+TXN-20260716-0060     2026-07-16  2026-07-16  USD            2650.65          0.00       294762.83Pioneer Audit Services LLC      INV SIM-2026-017 SETTLEMENT               SIM-2026-017        
+TXN-20260720-0061     2026-07-20  2026-07-20  USD            2418.99          0.00       292343.84Pioneer Audit Services LLC      INV SIM-2026-011 SETTLEMENT               SIM-2026-011        
+TXN-20260720-0062     2026-07-20  2026-07-20  USD            3356.41          0.00       288987.43Gridline Analytics Ltd.         Gridline Analytics Ltd. / SIM-2026-018    SIM-2026-018        
+TXN-20260721-0063     2026-07-21  2026-07-21  USD            3025.00          0.00       285962.43Gridline Analytics Ltd.         AP-SIM-2026-012-Gridline Analytics Ltd.   SIM-2026-012        
+TXN-20260722-0064     2026-07-22  2026-07-22  USD            2316.63          0.00       283645.80Northbridge Labs LLC            PAY SIM-2026-019 Northbridge Labs LLC     SIM-2026-019        
+TXN-20260723-0065     2026-07-23  2026-07-23  USD            2198.10          0.00       281447.70Northbridge Labs LLC            INV SIM-2026-013 SETTLEMENT               SIM-2026-013        
+TXN-20260724-0066     2026-07-24  2026-07-24  USD            2685.00          0.00       278762.70Apex Field Services Inc.        Apex Field Services Inc. / SIM-2026-020   SIM-2026-020        
+TXN-20260729-0067     2026-07-29  2026-07-29  USD            1664.74          0.00       277097.96Summit Pixel Billing LLC        Summit Pixel Billing LLC / SIM-2026-030   SIM-2026-030        
+TXN-20260731-0068     2026-07-31  2026-08-01  USD            2241.20          0.00       274856.76SHEET Invoice                   PAY SIM-2026-025 SHEET Invoice            SIM-2026-025        
+TXN-20260731-0069     2026-07-31  2026-08-01  USD            1690.00          0.00       273166.76Greenfield Office Services LLC  INV SIM-2026-028 SETTLEMENT               SIM-2026-028        
+TXN-20260803-0070     2026-08-03  2026-08-04  USD            2995.45          0.00       270171.31SHEET Invoice                   PAY SIM-2026-024 SHEET Invoice            SIM-2026-024        
+TXN-20260807-0071     2026-08-07  2026-08-08  USD            1842.53          0.00       268328.78Ironwood Receipt Imaging LLC    INV SIM-2026-026 SETTLEMENT               SIM-2026-026        
+TXN-20260810-0072     2026-08-10  2026-08-11  USD            2160.39          0.00       266168.39Silverline Parser Fixtures Inc. Silverline Parser Fixtures Inc. / SIM-2026SIM-2026-027        
+TXN-20260812-0073     2026-08-12  2026-08-12  USD            2629.10          0.00       263539.29Beacon Image Operations Co.     PAY SIM-2026-029 Beacon Image Operations CSIM-2026-029        

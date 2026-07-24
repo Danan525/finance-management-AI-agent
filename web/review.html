@@ -1,0 +1,1703 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人工审核</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;font-size:14px;line-height:1.5;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  header{background:#1f4e78;color:#fff;padding:14px 20px;flex:none;z-index:20}
+  .hbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;font-weight:700;color:#fff}
+  .htitle p{margin:3px 0 0;font-size:12px;opacity:.85}
+  /* 顶部导航：白底蓝字按钮，彼此留距离、显眼（与提取上传页一致）*/
+  .hnav{display:flex;gap:12px;flex-wrap:wrap}
+  .navbtn{background:#fff;color:#1f4e78;text-decoration:none;font-size:14px;font-weight:600;padding:9px 16px;border-radius:8px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+  .navbtn:hover{background:#eef4fb}
+  /* 第二行：汇总 / 筛选 / 重新提取 / 快捷键（深底上的浅色控件）*/
+  .htools{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:11px}
+  #summary{font-size:13px;color:#e6eef7}
+  #filter{padding:5px 9px;border-radius:6px;border:1px solid rgba(255,255,255,.5);background:#fff;font-size:13px}
+  .reapplyall{font-size:12px;padding:6px 12px;border:0;background:#fff;color:#1f4e78;border-radius:8px;cursor:pointer;font-weight:600}
+  .reapplyall:hover{background:#eef4fb}
+  .layout{display:flex;flex:1;min-height:0}
+  .queue{width:270px;overflow:auto;border-right:1px solid #ddd;background:#fff;flex:none}
+  .qcol{width:270px;flex:none;border-right:1px solid #ddd;background:#fff;display:flex;flex-direction:column;overflow:hidden;align-items:stretch;text-align:left}
+  #queue{overflow:auto;flex:1}
+  #batchbar{padding:6px 8px;border-bottom:1px solid #eee;background:#f1f8f2;font-size:12px;display:none;position:sticky;top:0;z-index:6}
+  #batchbar .bapprove{background:#137333;color:#fff;border-color:#137333;padding:4px 9px;font-size:12px}
+  #batchbar .bdelete{background:#c0392b;color:#fff;border-color:#c0392b;padding:4px 9px;font-size:12px;margin-left:6px;cursor:pointer;border-radius:4px}
+  .kbdhint{font-size:11px;color:#cdd9e8}
+  .kbdhint b{color:#fff}
+  .dtoggle .dtbtn{padding:6px 12px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.12);color:#fff;cursor:pointer;font-size:13px;font-weight:600}
+  .dtoggle .dtbtn:first-child{border-radius:8px 0 0 8px}
+  .dtoggle .dtbtn:last-child{border-radius:0 8px 8px 0;border-left:0}
+  .dtoggle .dtbtn.on{background:#fff;color:#1f4e78}
+  /* 流水左栏「整理视图 / 原件」切换 */
+  .svtoggle{position:sticky;top:0;z-index:7;display:flex;gap:0;padding:6px;background:#3a4653}
+  .svbtn{padding:6px 12px;border:1px solid #55606c;background:#2b333c;color:#cdd9e8;cursor:pointer;font-size:12px;font-weight:600}
+  .svbtn:first-child{border-radius:6px 0 0 6px}
+  .svbtn:last-child{border-radius:0 6px 6px 0;border-left:0}
+  .svbtn.on{background:#fff;color:#1f4e78;border-color:#fff}
+  table.txn{width:100%;border-collapse:collapse;font-size:13px}
+  table.txn th{background:#eef2f7;padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;font-size:12px}
+  table.txn td{padding:5px 8px;border-bottom:1px solid #eee}
+  table.txn td.num{text-align:right;white-space:nowrap}
+  /* 摘要列(2)占满剩余宽度，其余列收窄 → 摘要文本换行少、不挤成很多行 */
+  table.txn{table-layout:fixed}
+  table.txn th:nth-child(1),table.txn td:nth-child(1){width:96px}
+  table.txn th:nth-child(3),table.txn td:nth-child(3),
+  table.txn th:nth-child(4),table.txn td:nth-child(4){width:82px}
+  table.txn th:nth-child(5),table.txn td:nth-child(5){width:86px}
+  table.txn th:nth-child(6),table.txn td:nth-child(6){width:34px}
+  table.txn td:nth-child(2){white-space:normal}   /* 摘要：占剩余、可换行 */
+  table.txn .inc{color:#137333}
+  table.txn .exp{color:#c0392b}
+  .qitem{padding:9px 12px;border-bottom:1px solid #eee;cursor:pointer;text-align:left}
+  .qitem:hover{background:#eef3ff}
+  .qitem.crit{border-left:3px solid #e44}
+  .qitem.needfix{border-left:3px solid #d97706;background:#fffbf3}
+  .qitem.failed{border-left:3px solid #b91c1c;background:#fff6f6}
+  .qitem.sel{background:#e3edff}
+  .failbanner{background:#fdecec;border:1px solid #f2b8b8;color:#b91c1c;padding:8px 12px;border-radius:6px;margin:8px 0;font-size:13px}
+  .matchblock{background:#fff7ed;border:1px solid #f6c88a;border-left:4px solid #d97706;color:#92400e;padding:9px 13px;border-radius:6px;margin:8px 0;font-size:13px}
+  .matchblock ul{margin:6px 0 0;padding-left:20px} .matchblock li{margin:2px 0}
+  .matchblock a.jumpfld{color:#b45309;font-weight:600;text-decoration:underline;cursor:pointer}
+  .qrow{display:flex;justify-content:space-between;align-items:start;gap:6px}
+  /* 队列行：纵向排列——复选框独占一行、靠左；下方文字块占满宽度（文字排版不变）*/
+  .qtop{display:flex;flex-direction:column;align-items:flex-start}
+  .qchk{width:auto;padding:0;margin:0 0 4px 0;align-self:flex-start}   /* 覆盖全局 input{width:100%}：复选框用固有宽度、靠左（否则方块在满宽框里被居中）*/
+  .qbody{width:100%}
+  .qbody>.st{display:block}
+  .qnamerow{display:flex;justify-content:space-between;gap:6px;align-items:flex-start}
+  .qnamerow>b,.qnamerow>span:first-child{flex:1;min-width:0;font-weight:600;overflow-wrap:break-word;word-break:break-word;line-height:1.35}
+  .qnamerow .qicons{flex:none}            /* 图标固定右侧，不挤压文件名 */
+  .qspacer{display:none}                  /* 合集头/成员对齐改由 .qtop 的左内边距实现，不再需要占位 */
+  .collicon{align-self:flex-start;margin:0 0 4px 0;font-size:14px}   /* 📎 独占一行、靠左，下面才是文件名 */
+  /* 多发票合集折叠 */
+  .qitem.coll{background:#fbf7ef;border-left:3px solid #d19a3d}
+  .qitem.coll:hover{background:#f6efe0}
+  .collcnt{font-size:11px;background:#d19a3d;color:#fff;border-radius:6px;padding:1px 7px;white-space:nowrap}
+  .collarrow{display:inline-block;width:12px}
+  .collbody{background:#fdfaf3;border-bottom:1px solid #eee}
+  .collbar{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;border-bottom:1px dashed #e6d8bf}
+  .collprev{display:block;max-width:100%;margin:6px auto;border:1px solid #e6d8bf;border-radius:4px}
+  .qitem.collmember{padding-left:22px;background:#fff}
+  .qitem.collmember:hover{background:#eef3ff}
+  /* 详情页「是否多张」控件 */
+  .multictl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;margin:6px 0;border-radius:6px;font-size:12px}
+  .multictl.coll{background:#fbf7ef;border:1px solid #e6d8bf}
+  .multictl.single{background:#f6f8fb;border:1px dashed #cfd8e3}
+  .multictl .mspacer{flex:1}
+  .mbtn{font-size:12px;padding:5px 11px;border:1px solid #b98a2e;background:#fff;color:#8a6416;border-radius:8px;cursor:pointer}
+  .mbtn:hover{background:#fbf3e2}
+  /* 人工画线切割弹窗 */
+  .cutoverlay{position:fixed;inset:0;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);z-index:50;display:flex;justify-content:center;padding:20px;overflow:auto}
+  .cutpanel{background:#fff;border-radius:12px;max-width:820px;width:100%;align-self:flex-start;box-shadow:0 12px 40px rgba(0,0,0,.28)}
+  .cutbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #eee;position:sticky;top:0;background:#fff;z-index:2;border-radius:8px 8px 0 0}
+  .cutbar .cutok{background:#137333;color:#fff;border-color:#137333}
+  .cutpages{padding:14px;max-height:78vh;overflow:auto;background:#f1f5f9}
+  .cutpage{position:relative;margin:0 auto 12px;cursor:crosshair;width:fit-content;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+  .cutpage img{display:block;max-width:100%}
+  .cutlines{position:absolute;inset:0}
+  .cutline{position:absolute;left:0;right:0;height:0;border-top:2px dashed #dc2626;cursor:pointer}
+  .cutline::before{content:'✂ 切';position:absolute;left:2px;top:-8px;font-size:10px;color:#dc2626;background:#fff;padding:0 3px;border-radius:3px}
+  /* 学到新规则弹窗 */
+  .lrow{padding:9px 0;border-bottom:1px dashed #eee}
+  .lrow.ldone{opacity:.55}
+  .ldesc{font-size:13px;margin-bottom:6px}
+  .lbtns{display:flex;gap:8px;flex-wrap:wrap}
+  .qicons{white-space:nowrap;font-size:14px}
+  .qicons a,.qicons span{margin-left:4px}
+  .st{font-size:11px;color:#777}
+  .detail{flex:1;overflow:auto;padding:0;display:flex;flex-direction:column}
+  .dhead{padding:12px 16px;border-bottom:1px solid #eee;font-size:14px;background:#fff}
+  .dhead b{font-size:16px;font-weight:700}
+  .dhead .st{padding:2px 8px;background:#eee;border-radius:10px;margin-left:8px;font-size:12px}
+  .cols{display:flex;gap:0;align-items:flex-start}
+  /* 服务明细：整页宽度，一眼看全 */
+  .lisec{background:#fff;margin-top:6px}                                          /* 并入右侧字段栏，随字段同列滚动，点明细行即可与吸附的原件同屏对照 */
+  .lisec table.li{width:100%;table-layout:fixed}
+  .lisec table.li td:first-child,.lisec table.li th:first-child{width:auto;min-width:80px} /* 描述列占满剩余、留最小宽 */
+  .lisec table.li .num{width:66px}
+  .lisec table.li th:last-child,.lisec table.li td:last-child{width:58px;text-align:center;white-space:nowrap}
+  .splitsugg{background:#eef6ff;border:1px solid #b6d4f5;border-radius:6px;padding:8px 10px;margin:8px 0;font-size:13px}
+  .splitsugg b{color:#1f4e78}
+  .splitsugg .seg{display:inline-block;background:#fff;border:1px solid #cdddf0;border-radius:4px;padding:1px 6px;margin:2px 3px;font-size:12px}
+  .splitsugg button{margin-left:8px;padding:4px 11px;border:1px solid #1f4e78;background:#1f4e78;color:#fff;border-radius:8px;cursor:pointer;font-size:12px}
+  .liadd{margin-top:8px;padding:6px 12px;border:1px dashed #94a3b8;background:#f8fafc;color:#334155;border-radius:8px;cursor:pointer;font-size:13px}
+  /* 原件栏吸附固定：滚动看字段/明细时，原件始终留在左边可见（不再是内部滚动“陷阱”）*/
+  .orig{flex:1.4;min-width:420px;overflow:auto;background:#52555a;padding:14px;text-align:left;
+        position:sticky;top:0;height:calc(100vh - 140px)}
+  /* 字段栏跟随整页滚动流（去掉自身 overflow，明细在下方同一条滚动里，随手就能划到）*/
+  .fields{flex:1;min-width:340px;padding:16px 18px;background:#fff;border-left:1px solid #ddd}
+  /* 窄窗口：两栏改上下堆叠，原件占满整行宽度（否则原件栏被字段栏 min-width 挤窄、发票显得很小）*/
+  @media (max-width:1024px){
+    .cols{flex-direction:column}
+    .orig{min-width:0;height:62vh;position:static;border-bottom:1px solid #ddd}
+    .fields{min-width:0;border-left:none}
+  }
+  /* 原件页：图片 + 绝对定位字段框（按页 pt 尺寸百分比，自动随图缩放） */
+  .page{position:relative;display:inline-block;margin:0 0 14px;box-shadow:0 1px 6px rgba(0,0,0,.4);background:#fff;width:var(--zoom,100%)}
+  .page img{display:block;width:100%;height:auto}
+  /* 原件缩放工具条（放大/缩小/适应宽度），随原件区顶部吸附 */
+  .zoombar{position:sticky;top:0;z-index:6;display:flex;gap:6px;align-items:center;
+    background:rgba(35,37,41,.94);color:#e6e6e6;font-size:12px;padding:6px 8px;border-radius:6px;margin-bottom:10px;text-align:left}
+  .zoombar button{min-width:26px;height:24px;border:1px solid #888;background:#fff;color:#222;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;padding:0 6px}
+  .zoombar button:hover{background:#eef3fb}
+  .zoombar #zoomlbl{min-width:42px;text-align:center}
+  .fbox{position:absolute;border:1.5px solid rgba(40,110,240,.55);background:rgba(80,140,255,.12);
+        border-radius:2px;cursor:pointer;transition:background .12s,border-color .12s}
+  .fbox:hover{background:rgba(80,140,255,.28)}
+  .fbox.hot{border-color:#ff9500;background:rgba(255,180,40,.45);box-shadow:0 0 0 2px rgba(255,149,0,.5)}
+  .libox{border-color:rgba(16,150,90,.6);background:rgba(30,180,120,.12)}
+  .libox:hover{background:rgba(30,180,120,.28)}
+  .libox .tag{background:#0f8f5f}
+  .subbox{border-color:rgba(150,70,200,.6);background:rgba(160,80,210,.14)}
+  .subbox:hover{background:rgba(160,80,210,.30)}
+  .subbox .tag{background:#8e44ad}
+  .legend{margin-left:auto;font-size:11px;color:#ddd;display:flex;gap:8px;align-items:center}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:3px;vertical-align:-1px}
+  .legend .lg-f{background:rgba(80,140,255,.5);border:1px solid rgba(40,110,240,.7)}
+  .legend .lg-l{background:rgba(30,180,120,.4);border:1px solid rgba(16,150,90,.7)}
+  .legend .lg-s{background:rgba(160,80,210,.4);border:1px solid rgba(150,70,200,.7)}
+  tr.lirow{cursor:pointer}
+  tr.lirow.rowhot{background:#fff3da;outline:1px solid #ffb84d}
+  tr.lirow.located td:first-child::before{content:"◎ ";color:#0f8f5f;font-size:11px}
+  tr.txnrow{cursor:pointer}
+  tr.txnrow:hover{background:#f3f7ff}
+  tr.txnrow.rowhot{background:#fff3da;outline:1px solid #ffb84d}
+  tr.txnrow.located td:first-child::before{content:"◎ ";color:#0f8f5f;font-size:11px}
+  /* 从上传页卡片深链定位到某笔交易：识别行与原件框都闪动几下便于快速定位 */
+  @keyframes rowflash{0%,100%{background:#fff}30%,70%{background:#ffdf9e}}
+  @keyframes boxflash{0%,100%{box-shadow:0 0 0 2px rgba(255,149,0,.4)}50%{box-shadow:0 0 0 6px rgba(255,149,0,.95)}}
+  tr.txnrow.flashing{animation:rowflash .45s ease-in-out 5;outline:2px solid #ff9500}
+  .fbox.flashing{animation:boxflash .45s ease-in-out 5;border-color:#ff7a00;background:rgba(255,180,40,.55)!important;z-index:5}
+  tr.txnrec{background:#eef7ee}                                   /* 已对账交易行：淡绿底 */
+  tr.txnrec input,tr.txnrec textarea{background:#eef7ee;color:#3a5a3a;border-color:#cfe3cf}
+  tr.txnnoinv{background:#eef1f7}                                 /* 已确认无需发票：淡蓝灰底 */
+  tr.txnnoinv input,tr.txnnoinv textarea{background:#eef1f7;color:#3a4a63;border-color:#cfd8e6}
+  .recbadge{font-size:11px;color:#137333;font-weight:600;white-space:nowrap}
+  .recbadge.rec-noinv{color:#5a6b8c}
+  .fbox .tag{position:absolute;top:-15px;left:0;font-size:9px;background:#286ef0;color:#fff;
+             padding:0 3px;border-radius:2px;white-space:nowrap;opacity:0;pointer-events:none}
+  .fbox:hover .tag,.fbox.hot .tag{opacity:1}
+  .fbox.hot .tag{background:#ff9500}
+  .nofile{color:#ddd;padding:30px;font-size:13px}
+  .selbox{position:absolute;border:1.5px dashed #2563eb;background:rgba(37,99,235,.12);pointer-events:none;z-index:5}
+  .regpop{position:fixed;z-index:50;width:340px;background:#fff;border:1px solid #94a3b8;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.28);padding:10px}
+  .rphead{font-size:12px;color:#334155;font-weight:700;margin-bottom:4px}
+  .rpx{float:right;cursor:pointer;color:#b91c1c}
+  .regpop textarea{width:100%;box-sizing:border-box;height:54px;font-size:12px;border:1px solid #ccc;border-radius:3px}
+  .rprow{display:flex;gap:6px;margin-top:6px;align-items:center}
+  .rprow select{flex:1;font-size:12px}
+  .rprow button{padding:4px 10px;font-size:12px;border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:4px;cursor:pointer}
+  .rprow button:first-child{background:#fff;color:#2563eb}
+  pre.rawfallback{background:#fff;border:1px solid #ccc;padding:10px;white-space:pre-wrap;word-break:break-all;font-size:12px;text-align:left;color:#222;margin:0}
+  table{width:100%;border-collapse:collapse}
+  td{border-bottom:1px solid #eee;padding:5px 6px;font-size:14px;vertical-align:middle}
+  td.k{width:128px;color:#5a6572}
+  tr.frow{cursor:pointer}
+  tr.frow:hover{background:#f3f7ff}
+  tr.frow.rowhot{background:#fff3da;outline:1px solid #ffb84d}
+  tr.frow.located td.k::after{content:" ◎";color:#286ef0;font-size:11px}
+  input{width:100%;box-sizing:border-box;padding:4px;border:1px solid #ccc;border-radius:3px}
+  /* 字段/明细描述用自适应高度 textarea：默认就长高显示全部内容，不用点、不用横向滚动 */
+  textarea.field-in{width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid #ccc;border-radius:3px;
+    font:inherit;line-height:1.5;resize:vertical;overflow:hidden;min-height:28px}
+  textarea.field-in:focus{border-color:#2563eb;box-shadow:0 0 0 2px rgba(37,99,235,.15);outline:none}
+  textarea.li-ta{width:100%;box-sizing:border-box;padding:2px 4px;border:1px solid #d8dee6;border-radius:3px;
+    font-size:12px;line-height:1.45;resize:vertical;overflow:hidden;min-height:24px}
+  .conf{color:#888;font-size:12px;width:78px;text-align:right}
+  .clrloc{display:inline-block;margin-left:4px;color:#b91c1c;cursor:pointer;font-size:11px;white-space:nowrap}
+  .clrloc:hover{text-decoration:underline}
+  .cls{font-size:12px;color:#555;margin:8px 0}
+  .muted2{color:#999;font-weight:400}
+  table.li{margin:4px 0 8px}
+  table.li th{background:#f0f3f8;font-size:11px;color:#555;text-align:left;padding:4px 6px;border-bottom:1px solid #ddd}
+  table.li td{font-size:12px;padding:4px 6px;border-bottom:1px solid #eee;vertical-align:top}
+  table.li td.num,table.li th.num{text-align:right;white-space:nowrap}
+  tr.subrow td{background:#f6faf6;border-bottom:1px solid #e6efe6}
+  .subwrap{font-size:11px;color:#4b6b4b}
+  .subwrap b{color:#137333}
+  .subitem{display:flex;gap:6px;align-items:center;padding:2px 0 2px 14px;border-top:1px dotted #d5e5d5}
+  .subitem b{color:#333}
+  .sub-in{padding:2px 4px;border:1px solid #cde0cd;border-radius:3px;font-size:12px;box-sizing:border-box}
+  .sub-in.num{text-align:right}
+  .recok{color:#137333;font-weight:600}
+  .recbad{color:#b91c1c;font-weight:600}
+  .subloc{cursor:pointer;color:#8e44ad;font-size:12px;flex:none}
+  .subitem.subhot{background:#f3e8ff;outline:1px solid #c084fc;border-radius:3px}
+  .li-in{width:100%;box-sizing:border-box;padding:2px 4px;border:1px solid #d8dee6;border-radius:3px;font-size:12px}
+  .li-in.num{text-align:right}
+  .lidel{padding:2px 6px;border:1px solid #e0a0a0;background:#fff;color:#b91c1c;border-radius:4px;cursor:pointer;font-size:12px}
+  .clsedit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;margin:4px 0 8px}
+  .clsedit label{display:flex;flex-direction:column;font-size:11px;color:#555;gap:2px}
+  .clsedit input{width:200px}
+  .suggline{margin:6px 0 8px}
+  .suggchip{display:inline-block;margin:2px 4px;padding:2px 8px;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:10px;font-size:12px;cursor:pointer}
+  .suggchip:hover{background:#e0e7ff}
+  .actions{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+  button{padding:8px 13px;border:1px solid #bbb;background:#fff;border-radius:8px;cursor:pointer;font-size:13px}
+  .approve{background:#137333;color:#fff;border-color:#137333}
+  .reject{background:#c62828;color:#fff;border-color:#c62828}
+  .del{background:#fff;color:#b91c1c;border-color:#e0a0a0;margin-left:auto}
+  .cmpbtn{display:inline-block;margin-left:8px;padding:2px 8px;background:#b91c1c;color:#fff;border-radius:4px;text-decoration:none;font-size:12px;white-space:nowrap}
+  .warn{color:#c62828;font-size:12px;margin-left:8px}
+  .muted{color:#999;padding:24px}
+  .hint{color:#888;font-size:11px;margin:6px 0}
+  h4{margin:16px 0 7px;font-size:14px;font-weight:700;color:#1f2d3d;padding-left:8px;border-left:3px solid #1f4e78}
+  ul{margin:4px 0;padding-left:18px;font-size:13px}
+  li.error,li.critical{color:#c62828}
+  .chg li{color:#555}
+</style>
+</head>
+<body>
+<header>
+  <div class="hbar">
+    <div class="htitle">
+      <h1>人工审核</h1>
+      <p>左为原件、右为提取字段；点字段↔点原件框双向定位（不自动入账）</p>
+    </div>
+    <nav class="hnav">
+      <a href="/" class="navbtn">← 回到提取上传</a>
+      <a href="/reconcile" class="navbtn">🔗 对账确认</a>
+      <a href="/ledger" class="navbtn">📒 总账</a>
+      <a href="/reports" class="navbtn">📊 财务报表</a>
+      <a href="/learned" class="navbtn">🧠 已学规则</a>
+      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
+    </nav>
+  </div>
+  <div class="htools">
+    <span class="dtoggle"><button id="rt-invoice" class="dtbtn on" onclick="setReviewType('invoice')">📄 审核发票</button><button id="rt-statement" class="dtbtn" onclick="setReviewType('statement')">🏦 审核流水</button></span>
+    <div id="summary"></div>
+    <select id="filter">
+      <option value="">全部</option>
+      <option value="Pending">待审</option>
+      <option value="Approved">已确认</option>
+      <option value="Rejected">已拒绝</option>
+      <option value="Hold">待定</option>
+    </select>
+    <button class="reapplyall" onclick="reapplyAll()" title="对所有未通过记录从原件重新提取（吃最新代码+已启用规则），但保留你手改/确认的字段；已通过的跳过">↻ 全部未通过按最新规则重新提取</button>
+    <span class="kbdhint">快捷键：<b>j/↓</b> 下一条 · <b>k/↑</b> 上一条 · <b>a</b> 通过并下一条 · <b>r</b> 拒绝 · <b>h</b> 待定 · <b>?</b> 帮助</span>
+  </div>
+</header>
+<div class="layout">
+  <div class="qcol">
+    <div id="batchbar">
+      <button class="bapprove" onclick="batchApprove()">批量通过选中 (0)</button>
+      <button class="bdelete" onclick="batchDelete()" title="删除选中的记录（已通过/已对账的会跳过）">批量删除选中 (0)</button>
+      <button onclick="clearBatch()" title="取消所有勾选，不会删除发票">取消勾选</button>
+      <span class="hint" style="color:#666">对勾选记录：逐条 Approve（缺关键字段会跳过），或批量删除（已通过/已对账的受保护会跳过）；「取消勾选」只清除选择、不删除数据</span>
+    </div>
+    <div id="queue"></div>
+  </div>
+  <div id="detail" class="detail"><div class="muted">← 选择左侧一条记录开始审核</div></div>
+</div>
+
+<script>
+let cur = null;          // 当前打开的记录（含 rev，乐观锁用）
+let qItems = [];         // 当前队列项（供 j/k 导航、批量、通过并下一条）
+let catToAccts = {};     // 分类下拉：类别 → 相关科目列表（选类别后据此更新科目推荐 + 自动带出）
+let allAccts = [];       // 全部科目候选（无相关时的回退）
+const batchSel = new Set();
+
+// 乐观锁：给所有 review 变更请求自动带上 base_rev=cur.rev；遇 409（他人已改）自动刷新当前记录到最新。
+// 每次编辑后本页都会 selectRecord 重载 → cur.rev 始终最新，同一用户连续编辑不会误判冲突。
+(function(){
+  const _f = window.fetch;
+  window.fetch = async function(u, o){
+    // 只对「当前打开记录」的变更请求注入 base_rev（批量通过是对其它记录、不注入，避免误判冲突）
+    const m = (o && o.method === 'POST' && typeof u === 'string') ? u.match(/\/api\/review\/([^/]+)\//) : null;
+    const sameRec = m && cur && cur.rev != null && decodeURIComponent(m[1]) === cur.file_hash;
+    if(sameRec && o.body){
+      try{
+        const b = JSON.parse(o.body);
+        if(b && typeof b === 'object' && !Array.isArray(b) && b.base_rev === undefined){
+          b.base_rev = cur.rev;
+          o = Object.assign({}, o, {body: JSON.stringify(b)});
+        }
+      }catch(e){/* 非 JSON body 不处理 */}
+    }
+    const resp = await _f(u, o);
+    if(resp.status === 409 && cur && cur.file_hash){
+      const h = cur.file_hash;
+      setTimeout(()=>selectRecord(h), 0);   // 刷新到最新版本，供用户在新版上重做
+    }
+    return resp;
+  };
+})();
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// 统一 POST：断网/超时/非-2xx/409/后端 error 都给可见反馈，避免"点了没反应"的静默失败。
+// 成功返回解析后的对象；失败弹提示并返回 null（调用方 `if(!d) return;`）。
+async function postJSON(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify(body||{})});
+    let d = null; try{ d = await r.json(); }catch(_e){}
+    if(r.status===409){ alert('该记录已被其它操作更新，请刷新后重试'); return null; }
+    if(!r.ok){ alert('操作失败（HTTP '+r.status+'）'+((d&&d.error)?('：'+d.error):'')); return null; }
+    if(d && d.error){ alert('操作失败：'+d.error); return null; }
+    return d || {};
+  }catch(e){ alert('网络错误，操作可能未生效，请刷新确认：'+e); return null; }
+}
+
+let queueOffset = 0; const QUEUE_PAGE = 100;
+let DOC_TYPE='invoice';                            // 审核类型：invoice 发票 / statement 流水
+function syncTypeButtons(){                         // 只切标签高亮，不重载（供恢复/自动对齐用）
+  document.getElementById('rt-invoice').classList.toggle('on', DOC_TYPE==='invoice');
+  document.getElementById('rt-statement').classList.toggle('on', DOC_TYPE==='statement');
+}
+function setReviewType(t){
+  if(DOC_TYPE===t) return;
+  DOC_TYPE=t;
+  syncTypeButtons();
+  try{ localStorage.setItem('review:lastType', t); }catch(e){}   // 记住"上次在看哪类"，刷新后回到同一标签
+  document.getElementById('detail').innerHTML='<div class="muted">← 选择左侧一条记录开始审核</div>';
+  cur=null;
+  loadQueue();
+}
+
+async function loadQueue(reset){
+  if(reset === undefined) reset = true;            // 默认重载首页；「加载更多」传 false 续接
+  const st = document.getElementById('filter').value;
+  if(reset) queueOffset = 0;
+  const qs = '?limit=' + QUEUE_PAGE + '&offset=' + queueOffset + '&doc_type=' + DOC_TYPE
+           + '&fix_first=1'                       // 未通过提取校验（需纠错）的排最前，便于优先处理
+           + (st ? ('&status=' + encodeURIComponent(st)) : '');
+  const r = await fetch('/api/review/queue' + qs);
+  const d = await r.json();
+  const s = d.summary || {};
+  document.getElementById('summary').textContent =
+    `待审 ${s.Pending||0} ｜ 已确认 ${s.Approved||0} ｜ 已拒绝 ${s.Rejected||0} ｜ 待定 ${s.Hold||0}`;
+  const q = document.getElementById('queue');
+  if(reset){ q.innerHTML = ''; qItems = []; }
+  const oldfoot = document.getElementById('qfoot'); if(oldfoot) oldfoot.remove();
+  const page = d.queue || [];
+  qItems = qItems.concat(page);
+  queueOffset += page.length;
+  // 清掉已不在队列里的批量勾选
+  const live = new Set(qItems.map(x=>x.file_hash));
+  [...batchSel].forEach(h=>{ if(!live.has(h)) batchSel.delete(h); });
+  updateBatchBar();
+  if(!qItems.length){ q.innerHTML = '<div class="muted">队列为空</div>'; return; }
+  const seenColl = new Set();   // 本次渲染已折叠过的合集（同组只出一个头）
+  page.forEach(it=>{
+    if((it.segment_total||1) > 1){                 // 多发票合集 → 折叠成一个头
+      if(seenColl.has(it.source_file_hash)) return;   // 组内其余成员并入头，不单独出行
+      seenColl.add(it.source_file_hash);
+      q.appendChild(renderCollectionHead(it));
+      return;
+    }
+    q.appendChild(renderQueueItem(it));            // 普通单张
+  });
+  if(d.has_more){
+    const foot = document.createElement('div');
+    foot.id = 'qfoot';
+    foot.style.cssText = 'padding:8px;text-align:center';
+    foot.innerHTML = `<button onclick="loadQueue(false)" style="font-size:12px;padding:4px 10px">加载更多（已 ${qItems.length}/${d.total}）</button>`;
+    q.appendChild(foot);
+  }
+}
+
+// 普通单张队列项
+function renderQueueItem(it){
+  const el = document.createElement('div');
+  el.className = 'qitem' + (it.critical_review ? ' crit' : '') + (it.parse_failed ? ' failed' : '')
+               + (it.needs_fix ? ' needfix' : '');
+  // 未通过提取校验但非"提取失败"（失败已有专门红字）→ 标"需纠错"，提示暂不参与对账
+  const fixTag = (it.needs_fix && !it.parse_failed) ? '<span style="color:#b45309;font-weight:600">⚠ 需纠错</span> ｜ ' : '';
+  el.dataset.hash = it.file_hash;
+  const when = (it.uploaded_at||'').replace('T',' ').slice(0,16);
+  const h6 = (it.file_hash||'').slice(0,6);
+  const dupIcon = it.is_duplicate
+    ? `<a href="/compare?hash=${encodeURIComponent(it.file_hash)}" target="_blank" title="疑似重复·对比确认" onclick="event.stopPropagation()" style="text-decoration:none">⚖</a>` : '';
+  const delIcon = `<span title="删除记录" onclick="event.stopPropagation();delFromQueue('${esc(it.file_hash)}')" style="cursor:pointer">🗑</span>`;
+  // 流水与发票的列表副行不同：流水显示 银行/期间/笔数/期末余额
+  const line2 = (it.doc_type==='statement')
+    ? `${fixTag}${it.parse_failed?'<span style="color:#b91c1c">提取失败·待人工录入</span> ｜ ':''}${esc(it.bank_name||it.bank_account_no||'银行流水')} ｜ ${esc((it.statement_period_start||'')+(it.statement_period_end?('~'+it.statement_period_end):'')||'—')} ｜ ${it.txn_count||0} 笔${it.reconciled_count?(' ｜ <span style="color:#137333">已处理 '+it.reconciled_count+'/'+(it.txn_count||0)+'</span>'):''} ｜ ${esc(it.approve_status)}${it.critical_review?' ｜ ⚠重点':''}`
+    : `${fixTag}${it.parse_failed?'<span style="color:#b91c1c">提取失败·待人工录入</span> ｜ ':''}${esc(it.invoice_no||'—')} ｜ ${esc(it.total_due||'—')} ｜ ${esc(it.approve_status)}${it.is_duplicate?' ｜ <span style="color:#b91c1c">⚖重复?</span>':''}${it.critical_review?' ｜ ⚠重点':''}`;
+  el.innerHTML = `<div class="qtop"><input type="checkbox" class="qchk" title="加入批量通过" onclick="event.stopPropagation();toggleBatch('${esc(it.file_hash)}',this.checked)"${batchSel.has(it.file_hash)?' checked':''}><div class="qbody"><div class="qnamerow"><b>${it.parse_failed?'⚠ ':''}${esc(it.file_name)}</b><span class="qicons">${dupIcon} ${delIcon}</span></div><small class="st">${line2}</small><small class="st" style="color:#94a3b8">${esc(when)} ｜ #${esc(h6)}</small></div></div>`;
+  el.onclick = ()=>{ goRecord(it.file_hash, it.is_duplicate, el); };
+  return el;
+}
+
+// 多发票合集折叠头：显示源文件名 + 张数；点击展开/收起组内各单张
+function renderCollectionHead(it){
+  const wrap = document.createElement('div');
+  wrap.className = 'collwrap';
+  wrap.dataset.src = it.source_file_hash;
+  const head = document.createElement('div');
+  head.className = 'qitem coll';
+  const segs = qItems.filter(x=>x.source_file_hash === it.source_file_hash);   // 该文件下全部发票（含各张）
+  const allSel = segs.length > 0 && segs.every(x=>batchSel.has(x.file_hash));
+  head.innerHTML = `<div class="qtop"><input type="checkbox" class="qchk" title="选中该文件下全部发票（用于批量删除整组）" onclick="event.stopPropagation();toggleBatchColl('${esc(it.source_file_hash)}',this.checked)"${allSel?' checked':''}><span class="collicon">📎</span><div class="qbody"><div class="qnamerow"><b>${esc(it.source_file_name||it.file_name)}</b><span class="qicons"><span class="collcnt">${it.segment_total} 张发票</span></span></div><small class="st"><span class="collarrow">▸</span> 一个文件含多张发票 · 点击展开逐张审核</small></div></div>`;
+  const body = document.createElement('div');
+  body.className = 'collbody'; body.style.display = 'none';
+  head.onclick = ()=> toggleCollection(wrap, it.source_file_hash, head, body);
+  wrap.appendChild(head); wrap.appendChild(body);
+  return wrap;
+}
+
+async function toggleCollection(wrap, src, head, body){
+  const arrow = head.querySelector('.collarrow');
+  if(body.style.display !== 'none'){ body.style.display='none'; if(arrow) arrow.textContent='▸'; return; }
+  body.style.display='block'; if(arrow) arrow.textContent='▾';
+  if(body.dataset.loaded){ return; }
+  body.innerHTML = '<div class="muted" style="padding:6px 10px">加载中…</div>';
+  const r = await fetch('/api/review/collection/' + encodeURIComponent(src));  // fetch：demo 包装器自动加前缀
+  if(!r.ok){ body.innerHTML = '<div class="muted" style="padding:6px 10px">加载失败</div>'; return; }
+  const c = await r.json();
+  body.innerHTML = '';
+  const B = (window.APP_BASE||'');   // 非 fetch 的 URL（img/href）：demo 注入 APP_BASE，主代码为空
+  // 顶部：查看原件 + 原文件页数提示
+  const bar = document.createElement('div');
+  bar.className = 'collbar';
+  bar.innerHTML = `<span class="muted">原文件：${esc(c.source_file_name)}（${c.page_count||'?'} 页 · ${c.count} 张发票）</span>
+    <a href="${B}/api/collection/${encodeURIComponent(src)}/original" target="_blank" style="margin-left:auto">下载原件</a>`;
+  body.appendChild(bar);
+  // 原件预览（缩略首页；点击可查看更多页由详情左栏承担）
+  if(c.page_count){
+    const prev = document.createElement('img');
+    prev.className = 'collprev'; prev.loading='lazy';
+    prev.src = B + '/api/collection/' + encodeURIComponent(src) + '/page/0';
+    prev.title = '源文件原貌（首页）';
+    body.appendChild(prev);
+  }
+  // 组内各单张
+  (c.members||[]).forEach(m=>{
+    m.segment_total = c.count;
+    const row = document.createElement('div');
+    row.className = 'qitem collmember' + (m.critical_review?' crit':'') + (m.parse_failed?' failed':'');
+    row.innerHTML = `<div class="qtop"><input type="checkbox" class="qchk qchk-mem" data-hash="${esc(m.file_hash)}" title="选中这一张（加入批量删除）" onclick="event.stopPropagation();toggleBatchMem('${esc(m.file_hash)}','${esc(src)}',this.checked)"${batchSel.has(m.file_hash)?' checked':''}><div class="qbody"><div class="qnamerow"><span><b>第 ${m.segment_index} 张</b> · ${esc(m.invoice_no||'—')}</span><span class="qicons">${m.is_duplicate?'⚖ ':''}<span title="单独删除这一张发票" onclick="event.stopPropagation();delFromQueue('${esc(m.file_hash)}')" style="cursor:pointer">🗑</span></span></div><small class="st">${m.parse_failed?'<span style="color:#b91c1c">提取失败</span> ｜ ':''}${esc(m.total_due||'—')} ｜ ${esc(m.approve_status)}${m.critical_review?' ｜ ⚠重点':''}</small></div></div>`;
+    row.onclick = ()=>{ goRecord(m.file_hash, m.is_duplicate, row); };
+    body.appendChild(row);
+  });
+  body.dataset.loaded = '1';
+}
+
+// 详情页「是否多张发票」纠正控件
+function renderMultiCtl(d){
+  const tot = d.segment_total||1;
+  if(tot > 1){   // 属于一个多发票合集
+    return `<div class="multictl coll">
+      <span>📎 本发票来自含 <b>${tot}</b> 张发票的文件《${esc(d.source_file_name)}》· 第 <b>${d.segment_index}</b> 张</span>
+      <span class="mspacer"></span>
+      <button class="mbtn" title="其实这个文件只有一张发票、被误拆了 → 合并回单张重新提取" onclick="resplitDoc('single')">这不是多张·合并回单张</button>
+      <button class="mbtn" title="切割错了/漏切了 → 直接人工画线重新切割" onclick="openDrawCut('${esc(d.source_file_hash)}')">切错了·人工画线重切</button>
+    </div>`;
+  }
+  // 单张：提供"其实是多张"入口
+  return `<div class="multictl single">
+    <span class="muted">若这个文件其实包含多张发票却被当成一张：</span>
+    <button class="mbtn" title="重新自动切分；找不到边界则人工画线切割" onclick="resplitDoc('auto')">其实是多张发票·重新切分</button>
+  </div>`;
+}
+
+async function resplitDoc(mode){
+  if(!cur) return;
+  const tip = mode==='single'
+    ? '将把这个文件合并成一张发票重新提取。该文件下所有发票的人工修改将被重置。继续？'
+    : '将重新切分这个文件。该文件下所有发票的人工修改将被重置。继续？';
+  if(!confirm(tip)) return;
+  const r = await fetch('/api/review/'+encodeURIComponent(cur.file_hash)+'/resplit', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({mode, base_rev: cur.rev})
+  });
+  const d = await r.json().catch(()=>({}));
+  if(r.status===409){ alert(d.error||'记录已被他人修改，已刷新'); loadQueue(); return; }
+  if(!r.ok){ alert(d.error||'操作失败'); return; }
+  if(d.resplit === false){                 // 自动找不到边界 → 人工画线切割
+    openDrawCut(cur.source_file_hash || cur.file_hash);
+    return;
+  }
+  await loadQueue(true);
+  if(d.records && d.records.length) await selectRecord(d.records[0].file_hash);
+  promptLearned(d.learned, null);   // 重切学的是"单张/多张"软先验，影响以后上传；不重提本张
+}
+
+// ---- 人工画线切割（自动找不到边界时的兜底）----
+let _cutState = null;
+async function openDrawCut(src){
+  const r = await fetch('/api/review/collection/' + encodeURIComponent(src));
+  const c = await r.json().catch(()=>({}));
+  if(!r.ok){ alert(c.error||'无法加载源文件'); return; }
+  const pages = c.page_count||0;
+  if(!pages){ alert('该文件无法在线预览分页，暂不支持画线切割（可下载原件后手动处理）'); return; }
+  const B = (window.APP_BASE||'');
+  _cutState = {src, cuts:[]};
+  let inner = `<div class="cutpanel"><div class="cutbar">
+      <b>✂ 人工画线切割：${esc(c.source_file_name)}</b>
+      <span class="muted" style="margin-left:8px">在每张“新发票的开始处”点击画一条横线；点线可删除。画 N 条 → 切成 N+1 张。</span>
+      <span style="flex:1"></span>
+      <button class="mbtn cutok" onclick="confirmCut()">确认切割并重新提取</button>
+      <button class="mbtn" onclick="closeCut()">取消</button></div>
+      <div class="cutpages">`;
+  for(let p=0;p<pages;p++){
+    inner += `<div class="cutpage" data-page="${p}" onclick="addCut(event,${p})">
+        <img src="${B}/api/collection/${encodeURIComponent(src)}/page/${p}" draggable="false">
+        <div class="cutlines" data-page="${p}"></div></div>`;
+  }
+  inner += `</div></div>`;
+  const ov = document.createElement('div');
+  ov.className='cutoverlay'; ov.id='cutoverlay'; ov.innerHTML = inner;
+  document.body.appendChild(ov);
+}
+function addCut(ev, page){
+  if(!_cutState) return;
+  const box = ev.currentTarget.getBoundingClientRect();
+  const pos = Math.max(0, Math.min(1, (ev.clientY - box.top)/box.height));
+  _cutState.cuts.push({page, pos});
+  redrawCuts();
+}
+function redrawCuts(){
+  document.querySelectorAll('.cutlines').forEach(el=>el.innerHTML='');
+  _cutState.cuts.forEach((c,i)=>{
+    const holder = document.querySelector('.cutlines[data-page="'+c.page+'"]');
+    if(!holder) return;
+    const line = document.createElement('div');
+    line.className='cutline'; line.style.top=(c.pos*100)+'%';
+    line.title='点击删除这条切割线';
+    line.onclick=(e)=>{ e.stopPropagation(); _cutState.cuts.splice(i,1); redrawCuts(); };
+    holder.appendChild(line);
+  });
+}
+function closeCut(){ const o=document.getElementById('cutoverlay'); if(o) o.remove(); _cutState=null; }
+async function confirmCut(){
+  if(!_cutState || !_cutState.cuts.length){ alert('请至少画一条切割线（在第二张发票的开始处）'); return; }
+  const src=_cutState.src, cuts=_cutState.cuts.slice();
+  if(!confirm('将按你画的线重新切分并重新提取。该文件下所有发票的人工修改将被重置。继续？')) return;
+  const cd = await (await fetch('/api/review/collection/'+encodeURIComponent(src))).json().catch(()=>({}));
+  const anyHash = (cd.members&&cd.members[0]) ? cd.members[0].file_hash : src;
+  const r = await fetch('/api/review/'+encodeURIComponent(anyHash)+'/resplit', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({mode:'manual', cuts})
+  });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok){ alert(d.error||'切割失败'); return; }
+  closeCut();
+  await loadQueue(true);
+  if(d.records && d.records.length) selectRecord(d.records[0].file_hash);
+}
+
+// 点队列项：疑似重复的先**校验真有重复候选**才跳比对（顺带自愈过期标记），
+// 否则正常打开详情——避免"旧标记跳到空比对页"。
+async function goRecord(hash, isDup, el){
+  if(isDup){
+    try{
+      const d = await (await fetch('/api/review/' + encodeURIComponent(hash) + '/duplicates')).json();
+      if(d && d.candidates && d.candidates.length){
+        location.href = (window.APP_BASE || '') + '/compare?hash=' + encodeURIComponent(hash);
+        return;
+      }
+      // 已无真重复（标记刚被自愈清除）→ 刷新队列去掉"⚖重复?"标，再正常打开详情
+      await loadQueue(true);
+    }catch(e){ /* 查询失败则退回正常打开 */ }
+  }
+  document.querySelectorAll('.qitem').forEach(x=>x.classList.remove('sel'));
+  const cell = el && document.body.contains(el) ? el
+             : [...document.querySelectorAll('.qitem')].find(x=>x.dataset.hash===hash);
+  if(cell) cell.classList.add('sel');
+  selectRecord(hash);
+}
+
+async function selectRecord(h, silent){
+  const r = await fetch('/api/review/' + encodeURIComponent(h));
+  if(!r.ok){
+    if(!silent) document.getElementById('detail').innerHTML='<div class="muted">未找到记录</div>';
+    return false;
+  }
+  cur = await r.json();
+  // 该记录若属另一类（发票/流水），自动对齐标签与左侧队列——深链或跨类恢复时保持一致
+  if(cur.doc_type && cur.doc_type!==DOC_TYPE){
+    DOC_TYPE = cur.doc_type;
+    syncTypeButtons();
+    await loadQueue(true);
+  }
+  renderDetail(cur);
+  try{
+    localStorage.setItem('review:lastHash', h);                  // 记住"上次审核的文件"，回来时恢复
+    if(cur.doc_type) localStorage.setItem('review:lastType', cur.doc_type);
+  }catch(e){}
+  return true;
+}
+
+// 左栏：渲染原件页 + 叠加字段框（按页 pt 尺寸百分比定位）
+function renderOriginal(d){
+  const pages = (d.page_sizes && d.page_sizes.length) ? d.page_sizes : [null];
+  const byPage = {};
+  for(const [k,f] of Object.entries(d.fields||{})){
+    if(f.bbox){ (byPage[f.bbox[0]] = byPage[f.bbox[0]] || []).push([k,f.bbox]); }
+  }
+  // 明细框（按页归集，绿色，与字段框区分）
+  const liByPage = {};
+  const subByPage = {};
+  (d.line_items||[]).forEach((li,ix)=>{
+    if(li.bbox){ (liByPage[li.bbox[0]] = liByPage[li.bbox[0]] || []).push([ix,li]); }
+    (li.sub_items||[]).forEach((s,si)=>{
+      if(s.bbox){ (subByPage[s.bbox[0]] = subByPage[s.bbox[0]] || []).push([ix,si,s]); }
+    });
+  });
+  // 银行流水逐笔交易框（按页归集，与发票字段/明细同机制，点交易行↔左侧高亮）
+  const txByPage = {};
+  (d.transactions||[]).forEach((t,ix)=>{
+    if(t.bbox){ (txByPage[t.bbox[0]] = txByPage[t.bbox[0]] || []).push([ix,t]); }
+  });
+  // 缩放工具条（放大/缩小/适应宽度）——原件太小看不清时可放大
+  let html = `<div class="zoombar">原件
+    <button onclick="zoomOut()" title="缩小">−</button>
+    <span id="zoomlbl">100%</span>
+    <button onclick="zoomIn()" title="放大">+</button>
+    <button onclick="zoomReset()" title="适应宽度">适应</button>
+    <span class="legend"><i class="lg-f"></i>字段 <i class="lg-l"></i>明细 <i class="lg-s"></i>勾稽</span></div>`;
+  const pct = (b,sz)=>({L:b[1]/sz[0]*100, T:b[2]/sz[1]*100, W:(b[3]-b[1])/sz[0]*100, H:(b[4]-b[2])/sz[1]*100});
+  pages.forEach((sz, pi)=>{
+    let boxes = '';
+    if(sz && sz[0] > 0 && sz[1] > 0){
+      (byPage[pi]||[]).forEach(([k,b])=>{
+        const p = pct(b,sz);
+        boxes += `<div class="fbox" data-field="${esc(k)}" onclick="boxClick('${esc(k)}')"
+          style="left:${p.L.toFixed(2)}%;top:${p.T.toFixed(2)}%;width:${p.W.toFixed(2)}%;height:${p.H.toFixed(2)}%">
+          <span class="tag">${esc(k)}</span></div>`;
+      });
+      (liByPage[pi]||[]).forEach(([ix,li])=>{
+        const p = pct(li.bbox,sz);
+        boxes += `<div class="fbox libox" data-li="${ix}" onclick="liBoxClick(${ix})"
+          style="left:${p.L.toFixed(2)}%;top:${p.T.toFixed(2)}%;width:${p.W.toFixed(2)}%;height:${p.H.toFixed(2)}%">
+          <span class="tag">明细${ix+1}${li.description?'：'+esc((li.description||'').slice(0,18)):''}</span></div>`;
+      });
+      (subByPage[pi]||[]).forEach(([ix,si,s])=>{
+        const p = pct(s.bbox,sz);
+        boxes += `<div class="fbox subbox" data-sub="${ix}_${si}" onclick="subBoxClick(${ix},${si})"
+          style="left:${p.L.toFixed(2)}%;top:${p.T.toFixed(2)}%;width:${p.W.toFixed(2)}%;height:${p.H.toFixed(2)}%">
+          <span class="tag">勾稽${ix+1}.${si+1}${s.description?'：'+esc((s.description||'').slice(0,14)):''}</span></div>`;
+      });
+      (txByPage[pi]||[]).forEach(([ix,t])=>{
+        const p = pct(t.bbox,sz);
+        boxes += `<div class="fbox libox" data-txn="${ix}" onclick="txnRowClick(${ix})"
+          style="left:${p.L.toFixed(2)}%;top:${p.T.toFixed(2)}%;width:${p.W.toFixed(2)}%;height:${p.H.toFixed(2)}%">
+          <span class="tag">第${ix+1}笔${t.date?'·'+esc(t.date):''}</span></div>`;
+      });
+    }
+    html += `<div class="page" data-pi="${pi}">
+      <img src="/api/review/${encodeURIComponent(d.file_hash)}/page/${pi}"
+           onerror="this.closest('.page').remove(); origFallback()">
+      ${boxes}</div>`;
+  });
+  return html;
+}
+
+// 原件缩放：变量持久（切换记录后保留上次倍数），bbox 为 .page 内百分比定位、随页缩放对齐不变
+let origZoom = 100;
+function setZoom(z){
+  origZoom = Math.max(40, Math.min(400, Math.round(z)));
+  const o = document.getElementById('orig');
+  if(o) o.style.setProperty('--zoom', origZoom + '%');
+  const lbl = document.getElementById('zoomlbl');
+  if(lbl) lbl.textContent = origZoom + '%';
+}
+function zoomIn(){ setZoom(origZoom + 20); }
+function zoomOut(){ setZoom(origZoom - 20); }
+function zoomReset(){ setZoom(100); }
+
+// 原件渲染不出来时（无原件/不支持在线预览，如旧版 .doc）：给"下载原件"链接 + 归档文本（若有）
+function origFallback(){
+  const orig = document.getElementById('orig');
+  if(orig && !orig.querySelector('.page') && !orig.querySelector('.rawfallback')){
+    const raw = (cur && (cur.raw_pdf_text || cur.raw_ocr_text)) || '';
+    const dl = cur ? ('/api/review/' + encodeURIComponent(cur.file_hash) + '/original') : '';
+    orig.innerHTML = `<div class="rawfallback">
+      <div class="hint" style="color:#ddd">此文件无法在线预览（如旧版 .doc）。请
+        <a href="${dl}" style="color:#8ab4ff;font-weight:700">⬇ 下载原件</a>
+        用本地软件（Word 等）打开后，对照右侧逐项人工录入。</div>
+      ${raw ? `<pre style="white-space:pre-wrap;color:#eee;margin-top:10px">${esc(raw)}</pre>`
+            : `<div class="hint" style="color:#aaa;margin-top:8px">（无可显示的归档文本）</div>`}
+    </div>`;
+  }
+}
+
+function renderDetail(d){
+  if(d.doc_type === 'statement'){ renderStatementDetail(d); return; }
+  let fields = '';
+  for(const [k,f] of Object.entries(d.fields||{})){
+    const loc = f.bbox ? ' located' : '';
+    const clr = f.bbox ? ` <span class="clrloc" title="定位框在错误位置？点此清除该字段的原件高亮" onclick="event.stopPropagation();clearLocate('${esc(k)}')">✕定位</span>` : '';
+    fields += `<tr class="frow${loc}" data-field="${esc(k)}" onclick="fieldClick('${esc(k)}')">
+      <td class="k">${esc(k)}</td>
+      <td><textarea class="field-in" data-field="${esc(k)}" rows="1" onclick="event.stopPropagation()" oninput="autoGrow(this)">${esc(f.value)}</textarea></td>
+      <td class="conf">${Math.round((f.confidence||0)*100)}%${f.suspicious?' ⚠':''}${clr}</td></tr>`;
+  }
+  const issues = (d.issues||[]).map(i=>`<li class="${esc(i.severity)}">${esc(i.code)}: ${esc(i.message)}</li>`).join('');
+  const changes = (d.changes||[]).map(c=>`<li>${esc(c.field)}: <s>${esc(c.old_value)}</s> → ${esc(c.new_value)} <small>(${esc(c.changed_by)})</small></li>`).join('');
+  const missing = (d.missing_required||[]);
+  // 「必须先修正才能参与对账匹配」的具体阻断项（与对账闸门同判据）——醒目列在顶部，可点定位
+  const blocks = d.match_blocks || [];
+  const blockBanner = (d.parse_status!=='failed' && blocks.length)
+    ? `<div class="matchblock"><b>⚠ 需先修正以下问题，这张${d.doc_type==='statement'?'流水':'发票'}才能参与对账匹配：</b>
+         <ul>${blocks.map(b=> b.field
+            ? `<li><a class="jumpfld" onclick="focusField('${esc(b.field)}')">${esc(b.label)}</a> <small class="muted2">（点此定位并填写）</small></li>`
+            : `<li>${esc(b.label)}</li>`).join('')}</ul></div>`
+    : '';
+  const anyBox = Object.values(d.fields||{}).some(f=>f.bbox);
+  // 服务明细（可编辑：描述/数量/单价/金额；可删多识别的行）
+  const items = d.line_items || [];
+  const liRows = items.map((li,ix)=>{
+    const loc = li.bbox ? ' located' : '';
+    const main = `<tr class="lirow${loc}" data-li="${ix}" onclick="liRowClick(${ix})">
+      <td><textarea class="li-ta" rows="1" onclick="event.stopPropagation()" oninput="autoGrow(this)" onchange="saveLine(${ix},'description',this.value)">${esc(li.description||'')}</textarea></td>
+      <td class="num"><input class="li-in num" value="${esc(li.quantity||'')}" onclick="event.stopPropagation()" onchange="saveLine(${ix},'quantity',this.value)"></td>
+      <td class="num"><input class="li-in num" value="${esc(li.unit_price||'')}" onclick="event.stopPropagation()" onchange="saveLine(${ix},'unit_price',this.value)"></td>
+      <td class="num"><input class="li-in num" value="${esc(li.amount||'')}" onclick="event.stopPropagation()" onchange="saveLine(${ix},'amount',this.value)"></td>
+      <td><button class="lidel" title="把这条大段描述拆成多行" onclick="event.stopPropagation();splitLine(${ix})">✂</button>
+          <button class="lidel" title="删除此行明细" onclick="event.stopPropagation();delLine(${ix})">🗑</button></td></tr>`;
+    // 归属到本行的类别明细子行（可改/加/删；实时勾稽 Σ子行==行金额；改金额时提醒）
+    const rec = li.reconcile || {};
+    const recBadge = rec.has_detail
+      ? (rec.matched
+          ? `<span class="recok">✓ 勾稽对上（子行合计 ${esc(rec.sub_sum)} = 行金额 ${esc(rec.line_amount)}）</span>`
+          : `<span class="recbad">⚠ 勾稽不平：子行合计 ${esc(rec.sub_sum)} ≠ 行金额 ${esc(rec.line_amount||'—')}</span>`)
+      : '';
+    const subs = (li.sub_items && li.sub_items.length) ? `<tr class="subrow"><td colspan="5">
+      <div class="subwrap"><div><b>明细勾稽</b> ${recBadge}</div>
+      ${li.sub_items.map((s,si)=>`<div class="subitem" data-sub="${ix}_${si}">
+        ${s.bbox?`<span class="subloc" title="在原件高亮此勾稽行" onclick="event.stopPropagation();subRowClick(${ix},${si})">◎</span>`:'<span class="subloc" style="visibility:hidden">◎</span>'}
+        <input class="sub-in" style="width:88px" title="日期" value="${esc(s.date||'')}" onclick="event.stopPropagation()" onchange="saveSub(${ix},${si},'date',this.value)">
+        <input class="sub-in" style="flex:1;min-width:120px" title="描述" value="${esc(s.description||'')}" onclick="event.stopPropagation()" onchange="saveSub(${ix},${si},'description',this.value)">
+        <input class="sub-in num" style="width:92px" title="金额" value="${esc(s.amount||'')}" onclick="event.stopPropagation()" onchange="saveSub(${ix},${si},'amount',this.value)">
+        <button class="lidel" title="删除此子明细" onclick="event.stopPropagation();delSub(${ix},${si})">🗑</button></div>`).join('')}
+      <button class="liadd" style="margin-top:4px;padding:2px 8px;font-size:12px" onclick="event.stopPropagation();addSub(${ix})">+ 子明细</button></div></td></tr>` : '';
+    return main + subs;
+  }).join('');
+  // 断句拆分建议（基于该对手方已启用的断句规则，仅预览，点采纳才拆）
+  const splitSugg = (d.line_split_suggestions || []).map(s=>
+    `<div class="splitsugg">建议把第 <b>${s.index+1}</b> 行按学过的断句拆成 <b>${s.pieces.length}</b> 段：
+      ${s.pieces.map(p=>`<span class="seg">${esc(p)}</span>`).join('')}
+      <button onclick="adoptSplit(${s.index}, ${esc(JSON.stringify(s.pieces))})">采纳拆分</button></div>`).join('');
+  const liTable = items.length ? `<h4>服务明细（${items.length} 项）<small class="muted2"> — 可改；多识别的行可删；✂ 拆分大段描述</small></h4>
+      ${splitSugg}
+      <table class="li"><thead><tr><th>服务 / 描述</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th><th></th></tr></thead>
+      <tbody>${liRows}</tbody></table>` : '<div class="hint">（未解析到服务明细行）</div>';
+  // 会计分类（提取阶段自动建议 → 人工确认/修正）
+  const cl = d.classification || {};
+  // 内容参考建议（基于已启用的"内容→科目"规则，仅参考、点采纳才填，不自动套用）
+  const sugg = (d.classification_suggestions || []).map(s=>
+    `<span class="suggchip" onclick="adoptCls(${esc(JSON.stringify(s.category||''))},${esc(JSON.stringify(s.account||''))})"
+      title="与已确认内容相似：${esc(s.from)}（相似度 ${Math.round(s.score*100)}%）">参考：${esc(s.category||'—')} / ${esc(s.account||'—')} ↩采纳</span>`).join('');
+  // 分类下拉候选（datalist：输入关键词即筛选推荐；选类别后科目推荐随之更新 + 自动带出）
+  const opts = d.category_options || [];
+  catToAccts = {};
+  opts.forEach(o=>{
+    if(!o.category) return;
+    (catToAccts[o.category] = catToAccts[o.category] || []);
+    if(o.account && !catToAccts[o.category].includes(o.account)) catToAccts[o.category].push(o.account);
+  });
+  const cats = [...new Set(opts.map(o=>o.category).filter(Boolean))];
+  allAccts = [...new Set(opts.map(o=>o.account).filter(Boolean))];
+  // 初始科目下拉：若已有类别，先按该类别的相关科目排前
+  const initRel = catToAccts[cl.category||''] || [];
+  const initAccts = initRel.length ? [...initRel, ...allAccts.filter(a=>!initRel.includes(a))] : allAccts;
+  const catList = `<datalist id="catlist">${cats.map(c=>`<option value="${esc(c)}"></option>`).join('')}</datalist>`;
+  const acctList = `<datalist id="acctlist">${initAccts.map(a=>`<option value="${esc(a)}"></option>`).join('')}</datalist>`;
+  const clsBlock = `<h4>会计分类 <small class="muted2">（提取时自动建议，请人工确认/修正；输入关键词可下拉选择）</small></h4>
+      <div class="clsedit">
+        <label>类别<input id="cls-cat" list="catlist" autocomplete="off" value="${esc(cl.category||'')}"
+          placeholder="输入/选择，如 Professional" oninput="onCatPick(this.value)"></label>
+        <label>科目<input id="cls-acct" list="acctlist" autocomplete="off" value="${esc(cl.account||'')}"
+          placeholder="输入/选择，如 6410 Professional Fees"></label>
+        ${catList}${acctList}
+        <button onclick="saveClassification()">保存分类</button>
+        <span class="hint">${cl.needs_review===false ? '✓ 已人工确认' : ('建议置信度 '+Math.round((cl.confidence||0)*100)+'%，待确认')}</span>
+      </div>
+      ${sugg?`<div class="suggline"><small class="muted2">内容参考（来自相似的已确认内容，仅供参考）：</small> ${sugg}</div>`:''}`;
+  document.getElementById('detail').innerHTML = `
+    <div class="dhead"><b>${esc(d.file_name)}</b><span class="st">${esc(d.approve_status)}</span>
+      ${d.is_duplicate?`<a class="cmpbtn" href="/compare?hash=${encodeURIComponent(d.file_hash)}" target="_blank">⚖ 疑似重复·对比确认 →</a>`:''}
+      ${missing.length?`<span class="warn">缺关键字段：${missing.map(esc).join('、')}（补齐才能通过）</span>`:''}</div>
+    ${renderMultiCtl(d)}
+    ${d.parse_status==='failed'?`<div class="failbanner">⚠ <b>自动提取失败</b>：右侧字段为空，请对照左侧原件**逐项人工录入**（点字段输入框填写、失焦即保存；也可在原件上拖框选取文字→填入）。明细可用「+ 新增明细行」逐条补。</div>`:''}
+    ${blockBanner}
+    <div class="cols">
+      <div class="orig" id="orig">${renderOriginal(d)}</div>
+      <div class="fields">
+        <h4>提取字段（◎=已在原件定位；改动即留痕）</h4>
+        <div class="hint">${anyBox?'点字段行 → 原件高亮对应位置；点原件蓝框 → 高亮对应字段。':'本件未能把字段定位到原件（OCR/扫描件或解析未命中），仍可对照左侧原件手工补录。'} <b>在原件上拖框选可取出文字 → 复制/填入字段。</b></div>
+        <table>${fields}</table>
+        ${clsBlock}
+        <div class="lisec">
+          ${liTable}
+          <button class="liadd" onclick="addLine()">+ 新增明细行</button>
+        </div>
+        ${issues?`<h4>校验问题 <small class="muted2">（顶部红框列的才是"必须修正才能参与对账匹配"的；其余为一般提示，不阻断匹配）</small></h4><ul>${issues}</ul>`:''}
+        ${changes?`<h4>修改轨迹</h4><ul class="chg">${changes}</ul>`:''}
+        <div class="actions">
+          <button class="approve" onclick="act('Approved')">✓ Approve &amp; Post</button>
+          <button onclick="act('Hold')">待定</button>
+          <button class="reject" onclick="act('Rejected')">✗ 拒绝</button>
+          <button onclick="reapplyRules()" title="从原件重新提取（吃最新代码+已启用规则），保留你手改/确认的字段与明细">↻ 按最新规则重新提取</button>
+          <button class="del" onclick="delInvoice()">🗑 删除记录</button>
+        </div>
+      </div>
+    </div>`;
+  document.querySelectorAll('#detail textarea[data-field]').forEach(inp=>{
+    inp.addEventListener('focus', ()=>highlightBox(inp.dataset.field));
+    inp.addEventListener('change', ()=>saveField(inp.dataset.field, inp.value.trim()));
+    autoGrow(inp);                              // 初始就长高到显示全部内容（不用点）
+  });
+  document.querySelectorAll('#detail .li-ta').forEach(autoGrow);   // 明细描述同样自适应高度
+  setupMarquee();
+  setZoom(origZoom);   // 应用当前缩放倍数（跨记录保留）并刷新工具条标签
+}
+
+// 文本框自适应高度：内容多就长高、显示全部（编辑时也保持全高）
+function autoGrow(el){
+  if(!el) return;
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight + 2) + 'px';
+}
+// 窗口尺寸变化后列宽会变 → 重算所有自适应文本框高度，避免残留过高/过矮的空白
+let _growTimer=null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_growTimer);
+  _growTimer=setTimeout(()=>document.querySelectorAll('#detail .li-ta, #detail textarea[data-field]').forEach(autoGrow), 120);
+});
+
+// ===== 银行流水详情：账户头（可编辑）+ 逐笔交易表（可逐行编辑）=====
+const STMT_FN={bank_name:'开户行',bank_account_name:'户名',bank_account_no:'账号',bank_swift:'SWIFT',
+  statement_period_start:'对账期起',statement_period_end:'对账期止',
+  opening_balance:'期初余额',closing_balance:'期末余额',currency_settlement:'币种'};
+function renderStatementDetail(d){
+  let fields='';
+  for(const [k,f] of Object.entries(d.fields||{})){
+    const loc=f.bbox?' located':'';
+    fields+=`<tr class="frow${loc}" data-field="${esc(k)}" onclick="fieldClick('${esc(k)}')">
+      <td class="k">${esc(STMT_FN[k]||k)}</td>
+      <td><textarea class="field-in" data-field="${esc(k)}" rows="1" onclick="event.stopPropagation()" oninput="autoGrow(this)">${esc(f.value)}</textarea></td>
+      <td class="conf">${Math.round((f.confidence||0)*100)}%${f.suspicious?' ⚠':''}</td></tr>`;
+  }
+  const txns=d.transactions||[];
+  const recN=txns.filter(t=>t.reconciled).length;   // 已处理笔数（对账 + 确认无需发票）
+  const anyRec=recN>0;
+  const rows=txns.map((t,i)=>{
+    const ro=!!t.settled, dis=ro?'disabled':'';
+    const noinv=t.settled==='no_invoice';
+    const last = ro
+      ? `<span class="recbadge${noinv?' rec-noinv':''}" title="${noinv?'已确认无需发票·锁定；可在对账页「已确认」里撤销':'已对账入账·锁定；如需改先在对账页撤销匹配'}">${noinv?'🔒无需发票':'🔒已对账'}</span>`
+      : `<button class="lidel" title="删除此笔" onclick="event.stopPropagation();delTxn(${i})">🗑</button>`;
+    return `<tr class="txnrow${t.bbox?' located':''}${ro?(noinv?' txnnoinv':' txnrec'):''}" data-txn="${i}" onclick="txnRowClick(${i})">
+    <td><input class="li-in" style="width:88px" value="${esc(t.date||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'date',this.value)"></td>
+    <td><textarea class="li-ta" rows="1" ${dis} onclick="event.stopPropagation()" oninput="autoGrow(this)" onchange="saveTxn(${i},'description',this.value)">${esc(t.description||'')}</textarea></td>
+    <td class="num"><input class="li-in num inc" style="width:74px" value="${esc(t.income||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'income',this.value)"></td>
+    <td class="num"><input class="li-in num exp" style="width:74px" value="${esc(t.expense||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'expense',this.value)"></td>
+    <td class="num"><input class="li-in num" style="width:78px" value="${esc(t.balance||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'balance',this.value)"></td>
+    <td>${last}</td></tr>`;}).join('');
+  const issues=(d.issues||[]).map(i=>`<li class="${esc(i.severity)}">${esc(i.code)}: ${esc(i.message)}</li>`).join('');
+  const changes=(d.changes||[]).map(c=>`<li>${esc(c.field)}: <s>${esc(c.old_value)}</s> → ${esc(c.new_value)} <small>(${esc(c.changed_by)})</small></li>`).join('');
+  document.getElementById('detail').innerHTML=`
+    <div class="dhead"><b>${esc(d.file_name)}</b><span class="st">🏦 银行流水 · ${esc(d.approve_status)}</span>
+      ${d.parse_status!=='parsed'?`<span class="warn">${esc(d.parse_status)}·请核对</span>`:''}</div>
+    <div class="cols">
+      <div class="orig" id="orig">
+        <div class="svtoggle">
+          <button class="svbtn on" id="sv-tidy" onclick="setStmtView('tidy')">🔍 整理视图（可点行高亮）</button>
+          <button class="svbtn" id="sv-raw" onclick="setStmtView('raw')">📄 原件（完整·可核对）</button>
+        </div>
+        <div id="svbody">${renderOriginal(d)}</div>
+      </div>
+      <div class="fields">
+        <h4>账户信息（改动即留痕）</h4>
+        <table>${fields}</table>
+        <h4>交易明细（${txns.length} 笔${recN?` · <span style="color:#137333">已处理 ${recN}/${txns.length}</span>`:''} · 可逐行核对/修改）</h4>
+        <table class="txn"><thead><tr><th>日期</th><th>摘要</th><th>收入</th><th>支出</th><th>余额</th><th></th></tr></thead>
+          <tbody>${rows||'<tr><td colspan="6" class="muted">未识别到交易，请对照左侧原件人工补录</td></tr>'}</tbody></table>
+        ${anyRec?'<div class="muted" style="font-size:12px">🔒 已有交易对账入账，不能增删交易行（会打乱行号）；如需改请先在对账页撤销匹配。</div>':'<button class="liadd" onclick="addTxn()">+ 新增交易行</button>'}
+        ${issues?`<h4>校验问题 <small class="muted2">（顶部红框列的才是"必须修正才能参与对账匹配"的；其余为一般提示，不阻断匹配）</small></h4><ul>${issues}</ul>`:''}
+        ${changes?`<h4>修改轨迹</h4><ul class="chg">${changes}</ul>`:''}
+        <div class="actions">
+          <button class="approve" onclick="act('Approved')">✓ 通过</button>
+          <button onclick="act('Hold')">待定</button>
+          <button class="reject" onclick="act('Rejected')">✗ 拒绝</button>
+          <button onclick="reapplyRules()" title="从原件重新提取">↻ 重新提取</button>
+          <button class="del" onclick="delInvoice()">🗑 删除记录</button>
+        </div>
+      </div>
+    </div>`;
+  document.querySelectorAll('#detail textarea[data-field]').forEach(inp=>{
+    inp.addEventListener('focus', ()=>highlightBox(inp.dataset.field));
+    inp.addEventListener('change', ()=>saveField(inp.dataset.field, inp.value.trim()));
+    autoGrow(inp);
+  });
+  // 交易摘要 textarea 自适应高度：等列宽最终确定（下一帧）再算，否则窄列时算出过高→文字下方留大片空白
+  requestAnimationFrame(()=>document.querySelectorAll('#detail .li-ta').forEach(autoGrow));
+  setupMarquee();
+  setZoom(origZoom);
+  // 恢复上次选的左栏视图（整理/原件），与位置记忆一致
+  let sv='tidy'; try{ sv=localStorage.getItem('review:stmtView')||'tidy'; }catch(e){}
+  if(sv==='raw') setStmtView('raw');
+}
+// 流水左栏：整理视图（规范交易表，可点行高亮，会截断长附言）↔ 原件（源文件真实字节，完整不截断，供核对）
+function setStmtView(mode){
+  if(!cur) return;
+  document.getElementById('sv-tidy').classList.toggle('on', mode==='tidy');
+  document.getElementById('sv-raw').classList.toggle('on', mode==='raw');
+  const body=document.getElementById('svbody');
+  const B=(window.APP_BASE||'');
+  if(mode==='raw'){
+    // 原件复用标准缩放条：默认「适应」栏宽自适应，可用 +/− 放大缩小、拖动滚动（与整理视图同一套 --zoom）
+    body.innerHTML = `<div class="zoombar">原件（真实字节·完整）
+        <button onclick="zoomOut()" title="缩小">−</button>
+        <span id="zoomlbl">100%</span>
+        <button onclick="zoomIn()" title="放大">+</button>
+        <button onclick="zoomReset()" title="适应宽度">适应</button></div>
+      <div class="page"><img src="${B}/api/review/${encodeURIComponent(cur.file_hash)}/raw.png"
+        onerror="this.closest('.page').innerHTML='<div class=muted style=padding:14px>该格式暂无原件文本视图，可下载原件核对。</div>'"></div>`;
+    setupMarquee(); setZoom(origZoom);
+  }else{
+    body.innerHTML = renderOriginal(cur);
+    setupMarquee(); setZoom(origZoom);
+  }
+  try{ localStorage.setItem('review:stmtView', mode); }catch(e){}
+}
+async function saveTxn(ix, field, value){
+  if(!cur) return;
+  const r=await fetch('/api/review/'+encodeURIComponent(cur.file_hash)+'/transaction',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({index:ix, field, value, by:'reviewer'})});
+  if(!r.ok){ let d={}; try{ d=await r.json(); }catch(e){} alert(d.error||'保存失败'); }   // 显示后端锁定等具体原因
+  selectRecord(cur.file_hash);
+}
+async function addTxn(){ if(cur) await saveTxn(-1,'__add__',''); }
+async function delTxn(ix){ if(cur) await saveTxn(ix,'__del__',''); }
+
+// 左侧原件可填字段清单（框选内容→填入）
+const FILLABLE=[['invoice_no','发票号'],['invoice_date','发票日期'],['payment_due_date','到期日'],
+  ['service_start','服务起'],['service_end','服务止'],['currency_settlement','币种'],
+  ['issuer_name','开票方'],['issuer_address','开票方地址'],['issuer_phone','开票方电话'],['issuer_email','开票方邮箱'],
+  ['customer_name','客户'],['customer_address','客户地址'],['contact_email','客户邮箱'],['contact_phone','客户电话'],
+  ['subtotal','税前金额'],['sales_tax','税额'],['total_due','总金额'],['tax_rate','税率'],
+  ['bank_name','开户行'],['bank_account_name','户名'],['bank_account_no','账号'],['bank_swift','SWIFT']];
+
+// 在原件上拖框选取文字（辅助定位/补录，不参与分类）
+let mq=null;
+function setupMarquee(){
+  document.querySelectorAll('#orig .page').forEach(page=>{
+    page.addEventListener('mousedown', e=>{
+      if(e.target.closest('.fbox')) return;     // 在字段框上不触发（保留点击高亮）
+      const r=page.getBoundingClientRect();
+      const box=document.createElement('div'); box.className='selbox'; page.appendChild(box);
+      mq={page, sx:e.clientX-r.left, sy:e.clientY-r.top, box};
+      e.preventDefault();
+    });
+  });
+}
+document.addEventListener('mousemove', e=>{
+  if(!mq) return;
+  const r=mq.page.getBoundingClientRect();
+  const cx=e.clientX-r.left, cy=e.clientY-r.top;
+  Object.assign(mq.box.style,{left:Math.min(cx,mq.sx)+'px',top:Math.min(cy,mq.sy)+'px',
+    width:Math.abs(cx-mq.sx)+'px',height:Math.abs(cy-mq.sy)+'px'});
+});
+document.addEventListener('mouseup', async e=>{
+  if(!mq) return;
+  const m=mq; mq=null;
+  const pw=m.page.clientWidth, ph=m.page.clientHeight;
+  const bx=parseFloat(m.box.style.left)||0, by=parseFloat(m.box.style.top)||0,
+        bw=parseFloat(m.box.style.width)||0, bh=parseFloat(m.box.style.height)||0;
+  m.box.remove();
+  if(!cur || (bw<6 && bh<6)) return;            // 仅当宽高都极小(≈点击)才忽略；细长横条选区照样有效
+  const norm={page:+m.page.dataset.pi, x0:bx/pw, y0:by/ph, x1:(bx+bw)/pw, y1:(by+bh)/ph};
+  const d=await (await fetch('/api/review/'+encodeURIComponent(cur.file_hash)+'/region-text',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(norm)})).json();
+  lastRegion=norm;   // 记住框选区，填入字段时一并存为该字段 bbox（便于和自动识别一样高亮对应）
+  showRegionPopup(d.text||d.note||'（未取到文字）', e.clientX, e.clientY);
+});
+let lastRegion=null;
+function showRegionPopup(text, px, py){
+  closeRegionPopup();
+  const pop=document.createElement('div'); pop.id='regpop'; pop.className='regpop';
+  pop.style.left=Math.min(px, window.innerWidth-360)+'px'; pop.style.top=Math.min(py, window.innerHeight-180)+'px';
+  pop.innerHTML=`<div class="rphead">框选内容 <span class="rpx" onclick="closeRegionPopup()">✕</span></div>
+    <textarea id="rptext">${esc(text)}</textarea>
+    <div class="rprow"><button onclick="copyRegion()">复制</button>
+      <select id="rpfield">${FILLABLE.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select>
+      <button onclick="fillRegion()">填入该字段</button></div>
+    <div class="rprow"><small class="muted2" style="flex:1">或把框选内容加为一条服务明细（框即其原件高亮）</small>
+      <button onclick="addLineFromRegion()">➕ 加为明细</button></div>`;
+  document.body.appendChild(pop);
+}
+function closeRegionPopup(){ const p=document.getElementById('regpop'); if(p) p.remove(); }
+function copyRegion(){ const t=document.getElementById('rptext'); t.select();
+  if(navigator.clipboard) navigator.clipboard.writeText(t.value); }
+async function fillRegion(){
+  const val=document.getElementById('rptext').value, field=document.getElementById('rpfield').value;
+  const region=lastRegion;   // 把框选区一并传给后端 → 该字段获得 bbox，能在原件上高亮对应
+  closeRegionPopup();
+  await saveField(field, val, region);
+}
+// 框选 → 加为一条明细：描述取框内文字（剥掉金额），金额取框内最右钱数，区域作该明细 bbox（可高亮）
+async function addLineFromRegion(){
+  if(!cur) return;
+  const val=(document.getElementById('rptext').value||'').trim();
+  const region=lastRegion;
+  closeRegionPopup();
+  if(!val) return;
+  // 金额识别：带货币符号/代码、千分位、或两位小数（不误抓年份/数量等裸整数）
+  const MONEY=/(?:US\$|HK\$|S\$|[\$€£]|[A-Z]{3}\s)\s*\d[\d,]*(?:\.\d{1,2})?|\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+\.\d{2}/g;
+  const money=val.match(MONEY);
+  const amount=money ? money[money.length-1].replace(/[^\d.]/g,'') : null;  // 取最右钱数；后端也会宽松解析
+  const desc=(val.replace(MONEY,'').replace(/\s{2,}/g,' ').trim()) || val;
+  const r=await fetch('/api/review/'+encodeURIComponent(cur.file_hash)+'/line-item/add',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({description:desc, amount:amount, region:region})});
+  const d=await r.json();
+  if(d.error){ alert('加明细失败：'+d.error); return; }
+  selectRecord(cur.file_hash);   // 重载 → 新明细带原件高亮显示
+}
+
+function clearHot(){
+  document.querySelectorAll('.fbox.hot').forEach(b=>b.classList.remove('hot'));   // 含 .libox / .subbox
+  document.querySelectorAll('tr.rowhot').forEach(r=>r.classList.remove('rowhot')); // 含 frow / lirow
+  document.querySelectorAll('.subitem.subhot').forEach(r=>r.classList.remove('subhot'));
+}
+
+// 勾稽子明细 ↔ 原件双向高亮（紫框）
+function subRowClick(ix,si){ highlightSubBox(ix,si); }
+function highlightSubBox(ix,si){
+  clearHot();
+  const boxes = document.querySelectorAll(`.subbox[data-sub="${ix}_${si}"]`);
+  if(boxes.length){ boxes.forEach(b=>b.classList.add('hot')); boxes[0].scrollIntoView({block:'center', behavior:'smooth'}); }
+}
+function subBoxClick(ix,si){
+  clearHot();
+  document.querySelectorAll(`.subbox[data-sub="${ix}_${si}"]`).forEach(b=>b.classList.add('hot'));
+  const row = document.querySelector(`.subitem[data-sub="${ix}_${si}"]`);
+  if(row){ row.classList.add('subhot'); row.scrollIntoView({block:'center', behavior:'smooth'}); }
+}
+
+// 明细 ↔ 原件双向高亮
+function liRowClick(ix){ highlightLiBox(ix); }
+function highlightLiBox(ix){
+  clearHot();
+  const boxes = document.querySelectorAll(`.libox[data-li="${ix}"]`);
+  if(boxes.length){ boxes.forEach(b=>b.classList.add('hot')); boxes[0].scrollIntoView({block:'center', behavior:'smooth'}); }
+}
+function liBoxClick(ix){
+  clearHot();
+  document.querySelectorAll(`.libox[data-li="${ix}"]`).forEach(b=>b.classList.add('hot'));
+  const row = document.querySelector(`tr.lirow[data-li="${ix}"]`);
+  if(row){ row.classList.add('rowhot'); row.scrollIntoView({block:'center', behavior:'smooth'}); }
+}
+
+// 银行流水交易 ↔ 左侧规范交易表 双向高亮（点交易行 → 左侧高亮该行；点左侧行框 → 右侧高亮并滚动）
+function txnRowClick(ix){
+  clearHot();
+  const boxes = document.querySelectorAll(`.libox[data-txn="${ix}"]`);
+  if(boxes.length){ boxes.forEach(b=>b.classList.add('hot')); boxes[0].scrollIntoView({block:'center', behavior:'smooth'}); }
+  const row = document.querySelector(`tr.txnrow[data-txn="${ix}"]`);
+  if(row){ row.classList.add('rowhot'); }
+}
+
+// 从上传页「最近识别的流水交易」卡片深链跳来：定位到具体交易——识别行 + 原件框都滚进视野并闪动
+function focusTxn(ix){
+  // 逐笔定位依赖「整理视图」里的行级框（结构化流水的源文件无逐笔几何，"原件"raw 视图没有框）；
+  // 若当前停在「原件」视图 → 先切回「整理视图」，否则左侧无框可定位/闪动。
+  const svRaw = document.getElementById('sv-raw');
+  if(svRaw && svRaw.classList.contains('on')){ try{ setStmtView('tidy'); }catch(e){} }
+  clearHot();
+  const boxes = [...document.querySelectorAll(`.libox[data-txn="${ix}"]`)];
+  boxes.forEach(b=>b.classList.add('hot'));
+  const row = document.querySelector(`tr.txnrow[data-txn="${ix}"]`);
+  if(row){ row.classList.add('rowhot'); }
+  // 闪动（不依赖布局，立即触发）
+  const els = [row].concat(boxes).filter(Boolean);
+  els.forEach(el=>{ el.classList.remove('flashing'); void el.offsetWidth; el.classList.add('flashing'); });
+  setTimeout(()=>els.forEach(el=>el.classList.remove('flashing')), 2500);
+  // 滚动定位：识别行(右)在 .detail 外层滚动里 scrollIntoView；原件框(左)**只滚 .orig 内部**——
+  // 不能用 scrollIntoView（它会连带滚外层 .detail，把右侧识别行顶走：这正是"左对了右又错"的原因）。
+  if(row) row.scrollIntoView({block:'center', behavior:'smooth'});
+  const scrollBox = ()=>{
+    const b = boxes[0], orig = document.getElementById('orig');
+    if(!b || !orig) return;
+    const br = b.getBoundingClientRect(), orr = orig.getBoundingClientRect();
+    // 把框在 .orig 视口内居中，只改 orig.scrollTop（左右两栏各自独立滚动，互不干扰）
+    orig.scrollTo({top: orig.scrollTop + (br.top - orr.top) - orig.clientHeight / 2 + br.height / 2,
+                   behavior: 'smooth'});
+  };
+  // 原件框按图片高度百分比定位——**必须等原件图加载完再滚**（否则 .page 高度未定、位置算错、停顶部）
+  const img = document.querySelector('#svbody .page img, #orig .page img');
+  if(img && !img.complete){ img.addEventListener('load', scrollBox, {once:true}); setTimeout(scrollBox, 1500); }
+  else scrollBox();
+}
+
+// 正向：点字段 → 原件高亮定位
+function fieldClick(field){ highlightBox(field); }
+// 从"需纠错"提示跳到具体字段：滚到该字段行、聚焦输入框、并高亮原件定位（若有）
+function focusField(field){
+  const row = document.querySelector(`tr.frow[data-field="${cssEsc(field)}"]`);
+  if(row){
+    row.scrollIntoView({block:'center', behavior:'smooth'});
+    row.classList.add('rowhot'); setTimeout(()=>row.classList.remove('rowhot'), 1800);
+    const inp = row.querySelector('textarea,input'); if(inp) inp.focus();
+  }
+  highlightBox(field);
+}
+function highlightBox(field){
+  clearHot();
+  const boxes = document.querySelectorAll(`.fbox[data-field="${cssEsc(field)}"]`);
+  if(boxes.length){
+    boxes.forEach(b=>b.classList.add('hot'));
+    boxes[0].scrollIntoView({block:'center', behavior:'smooth'});
+  }
+}
+
+// 反向：点原件框 → 高亮并聚焦右侧字段
+function boxClick(field){
+  clearHot();
+  document.querySelectorAll(`.fbox[data-field="${cssEsc(field)}"]`).forEach(b=>b.classList.add('hot'));
+  const row = document.querySelector(`tr.frow[data-field="${cssEsc(field)}"]`);
+  if(row){
+    row.classList.add('rowhot');
+    row.scrollIntoView({block:'center', behavior:'smooth'});
+    const inp = row.querySelector('textarea, input'); if(inp) inp.focus();
+  }
+}
+
+function cssEsc(s){ return String(s).replace(/["\\]/g,'\\$&'); }
+
+// 队列内直接删除某条（不需先选中）
+async function delFromQueue(hash){
+  if(!confirm('确定删除这条记录？删除后该记录将不存在（删除动作会留痕到审计轨迹）。')) return;
+  const reason = prompt('删除原因（可选，留痕用）：') || '';
+  const r = await fetch('/api/review/' + encodeURIComponent(hash) + '/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({by:'reviewer', reason})});
+  const d = await r.json();
+  if(d.error){ alert('删除失败：' + d.error); return; }
+  if(cur && cur.file_hash === hash){ document.getElementById('detail').innerHTML='<div class="muted">已删除该记录。</div>'; cur=null; }
+  loadQueue();
+}
+
+async function delInvoice(){
+  if(!cur) return;
+  if(!confirm('确定删除这条记录？删除后该记录将不存在（删除动作会留痕到审计轨迹）。')) return;
+  const reason = prompt('删除原因（可选，留痕用）：') || '';
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({by:'reviewer', reason})});
+  const d = await r.json();
+  if(d.error){ alert('删除失败：' + d.error); return; }
+  document.getElementById('detail').innerHTML = '<div class="muted">已删除该记录。</div>';
+  cur = null;
+  loadQueue();
+}
+
+async function saveLine(ix, field, value){
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/line-item/' + ix, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({field, value, by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('保存明细失败：' + d.error); selectRecord(cur.file_hash); return; }
+  if(field==='amount'){ remindReconcile(d.reconcile); selectRecord(cur.file_hash); }  // 改金额→提醒勾稽并刷新徽标
+}
+
+// 勾稽子明细：改/加/删；改金额后据返回的勾稽状态提醒是否对上
+function remindReconcile(rec){
+  if(rec && rec.has_detail && !rec.matched){
+    alert('⚠ 勾稽不平：子行合计 ' + rec.sub_sum + ' ≠ 行金额 ' + (rec.line_amount||'—') + '\n请核对该明细的子行金额或行金额。');
+  }
+}
+async function saveSub(ix, si, field, value){
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/line-item/' + ix + '/sub/' + si, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({field, value, by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('保存子明细失败：' + d.error); }
+  else if(field==='amount'){ remindReconcile(d.reconcile); }
+  selectRecord(cur.file_hash);   // 刷新勾稽徽标
+}
+async function addSub(ix){
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/line-item/' + ix + '/sub/add', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('新增子明细失败：' + d.error); return; }
+  selectRecord(cur.file_hash);
+}
+async function delSub(ix, si){
+  if(!confirm('删除这条勾稽子明细？')) return;
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/line-item/' + ix + '/sub/' + si + '/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('删除失败：' + d.error); return; }
+  remindReconcile(d.reconcile);
+  selectRecord(cur.file_hash);
+}
+async function addLine(){
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/line-item/add', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('新增失败：' + d.error); return; }
+  selectRecord(cur.file_hash);   // 重载，新空行可直接填
+}
+async function delLine(ix){
+  if(!confirm('删除这一行服务明细？（多识别/错误的行）')) return;
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/line-item/' + ix + '/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('删除失败：' + d.error); return; }
+  selectRecord(cur.file_hash);   // 重载，行号会重排
+}
+
+// 手工拆分：把一条大段描述按「每行一段」拆成多条明细，并学习这种断句方式（待启用后才作建议）
+function splitLine(ix){
+  const li = (cur.line_items||[])[ix]; if(!li) return;
+  closeRegionPopup();
+  const pop=document.createElement('div'); pop.id='regpop'; pop.className='regpop';
+  pop.style.left='50%'; pop.style.top='70px'; pop.style.transform='translateX(-50%)';
+  pop.innerHTML=`<div class="rphead">拆分明细 — 每行一段 <span class="rpx" onclick="closeRegionPopup()">✕</span></div>
+    <textarea id="splittext" style="height:150px">${esc(li.description||'')}</textarea>
+    <div class="rprow"><small class="muted2">把这段描述按行拆成多条服务（每行一段）。保存后系统会学习这种断句方式（先待确认，去「已学规则」启用后，以后相似大段才会给拆分建议）。</small></div>
+    <div class="rprow"><button onclick="doSplit(${ix})">拆分为多行</button></div>`;
+  document.body.appendChild(pop);
+}
+async function doSplit(ix){
+  const pieces=document.getElementById('splittext').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  if(pieces.length<2){ alert('请至少分成 2 段（每行一段）'); return; }
+  closeRegionPopup();
+  await adoptSplit(ix, pieces);
+}
+async function adoptSplit(ix, pieces){
+  const r=await (await fetch('/api/review/'+encodeURIComponent(cur.file_hash)+'/line-item/'+ix+'/split',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pieces})})).json();
+  if(r.error){ alert('拆分失败：'+r.error); return; }
+  const h = cur.file_hash;
+  await selectRecord(h);   // 重载，明细行重排
+  promptLearned(r.learned, h);
+}
+
+// 选/输类别后：把"科目"下拉推荐更新为该类别相关的科目（相关排前、其余仍保留），
+// 并在科目为空时自动带出首个相关科目（可再改）。
+function onCatPick(val){
+  const rel = catToAccts[val] || [];
+  const list = document.getElementById('acctlist');
+  if(list){
+    const ordered = rel.length ? rel.concat(allAccts.filter(a=>!rel.includes(a))) : allAccts;
+    list.innerHTML = ordered.map(a=>`<option value="${esc(a)}"></option>`).join('');
+  }
+  const a=document.getElementById('cls-acct');
+  if(a && !a.value && rel.length) a.value = rel[0];
+}
+
+// 采纳内容参考：仅把候选填入分类输入框，不自动保存（你确认后点"保存分类"才生效）
+function adoptCls(cat, acct){
+  const c=document.getElementById('cls-cat'), a=document.getElementById('cls-acct');
+  if(c) c.value = cat || '';
+  if(a) a.value = acct || '';
+  if(c) c.focus();
+}
+
+async function saveClassification(){
+  const cat = document.getElementById('cls-cat').value;
+  const acct = document.getElementById('cls-acct').value;
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/classify', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({category:cat, account:acct, by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('保存分类失败：' + d.error); return; }
+  const h = cur.file_hash;
+  await selectRecord(h);   // 重载，刷新轨迹与“已确认”状态
+  promptLearned(d.learned, h);
+}
+
+// 清除某字段的原件定位框（识别错位置时，改完值后去掉赖在错处的高亮）
+async function clearLocate(field){
+  if(!cur) return;
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/clear-locate', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({field})});
+  const d = await r.json();
+  if(d.error){ alert('清除定位失败：' + d.error); return; }
+  selectRecord(cur.file_hash);   // 重载 → 该字段的错误高亮消失
+}
+
+async function saveField(field, value, region){
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/field', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({field, value, by:'reviewer', region: region||null})});
+  const d = await r.json();
+  if(d.error){ alert('保存失败：' + d.error); return; }
+  const h = cur.file_hash;
+  await selectRecord(h);   // 重载，刷新值与修改轨迹
+  promptLearned(d.learned, h);   // 学到新规则 → 当场弹窗问是否启用
+}
+
+async function act(action, andNext){
+  if(!cur) return;
+  let reason = '';
+  if(action==='Rejected' || action==='Hold'){
+    reason = prompt(action==='Rejected' ? '拒绝原因（必填）：' : '待定原因（可选）：') || '';
+    if(action==='Rejected' && !reason){ alert('拒绝必须填写原因'); return; }
+  }
+  const d = await postJSON('/api/review/' + encodeURIComponent(cur.file_hash) + '/action',
+                           {action, reason, by:'reviewer'});
+  if(!d) return;                                                            // 失败已弹提示
+  if(d.blocked === 'duplicate'){ promptDupApprove(d, andNext); return; }   // 与已入账重复 → 强制比对
+  // 从对账页跳来审核这张发票的：通过后自动回到对账继续确认（应计→结算的闭环）
+  if(action==='Approved' && new URLSearchParams(location.search).get('back')==='reconcile'){
+    window.location = (window.APP_BASE||'') + '/reconcile';
+    return;
+  }
+  document.getElementById('detail').innerHTML = `<div class="muted">已 ${esc(action)}${andNext?'，正在跳到下一条…':''}，请选择下一条</div>`;
+  cur = null;
+  await loadQueue();
+  if(andNext){   // 「通过并下一条」：跳到下一条待审（优先非失败项）
+    const nx = qItems.find(x=>x.approve_status==='Pending' && !x.parse_failed)
+            || qItems.find(x=>x.approve_status==='Pending');
+    if(nx) selectByHash(nx.file_hash);
+  }
+}
+
+// ---- 入账时与已入账发票疑似重复 → 强制比对确认 ----
+function promptDupApprove(d, andNext){
+  const B = (window.APP_BASE||'');
+  const h = cur.file_hash;
+  const dups = (d.approved_dups||[]).map(x=>
+    `<li>${esc(x.file_name)} <a href="${B}/compare?hash=${encodeURIComponent(h)}" target="_blank" style="color:#1f4e78">→ 打开比对</a></li>`).join('');
+  const ov = document.createElement('div');
+  ov.className='cutoverlay'; ov.id='dupov';
+  ov.innerHTML = `<div class="cutpanel" style="max-width:560px;align-self:center">
+    <div class="cutbar" style="background:#fde8e8"><b style="color:#b91c1c">⚠ 与已入账的发票疑似重复</b>
+      <span style="flex:1"></span></div>
+    <div style="padding:14px 16px;font-size:14px">
+      <p>这张发票和<b>已经入账</b>的以下发票疑似重复，<b>必须先比对确认</b>再决定是否入账：</p>
+      <ul style="margin:8px 0 14px;padding-left:20px">${dups||'<li>（已入账的重复项）</li>'}</ul>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <a class="mbtn" href="${B}/compare?hash=${encodeURIComponent(h)}" target="_blank" style="background:#1f4e78;color:#fff;border-color:#1f4e78;text-decoration:none">🔍 打开比对页核对</a>
+        <button class="mbtn" style="border-color:#b91c1c;color:#b91c1c" onclick="forceApprove(${andNext?'true':'false'})">我已核对·确认非重复，仍要入账</button>
+        <button class="mbtn" onclick="document.getElementById('dupov').remove()">取消</button>
+      </div>
+    </div></div>`;
+  document.body.appendChild(ov);
+}
+async function forceApprove(andNext){
+  const o=document.getElementById('dupov'); if(o) o.remove();
+  if(!cur) return;
+  if(!confirm('确认这张与已入账发票不是重复、仍要入账？（将清除重复标记并留痕）')) return;
+  const r = await fetch('/api/review/'+encodeURIComponent(cur.file_hash)+'/action', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action:'Approved', by:'reviewer', force:true, reason:'人工比对确认非重复后入账'})});
+  const d = await r.json();
+  if(d.error){ alert('操作失败：'+d.error); return; }
+  document.getElementById('detail').innerHTML = '<div class="muted">已入账（已确认非重复），请选择下一条</div>';
+  cur=null; await loadQueue();
+  if(andNext){ const nx=qItems.find(x=>x.approve_status==='Pending'&&!x.parse_failed)||qItems.find(x=>x.approve_status==='Pending'); if(nx) selectByHash(nx.file_hash); }
+}
+
+// ---- 队列导航 + 批量通过 + 键盘流 -------------------------------------
+function selectByHash(h){
+  const el = [...document.querySelectorAll('.qitem')].find(e=>e.dataset.hash===h);
+  if(el){ document.querySelectorAll('.qitem').forEach(x=>x.classList.remove('sel')); el.classList.add('sel'); el.scrollIntoView({block:'nearest'}); }
+  selectRecord(h);
+}
+function moveSel(delta){
+  if(!qItems.length) return;
+  let i = cur ? qItems.findIndex(x=>x.file_hash===cur.file_hash) : -1;
+  i = Math.max(0, Math.min(qItems.length-1, i + delta));
+  selectByHash(qItems[i].file_hash);
+}
+function toggleBatch(h, on){ if(on) batchSel.add(h); else batchSel.delete(h); updateBatchBar(); }
+function toggleBatchColl(src, on){   // 合集头复选框：选中/取消该文件下全部发票（供批量删除整组）
+  qItems.filter(x=>x.source_file_hash===src).forEach(x=>{ if(on) batchSel.add(x.file_hash); else batchSel.delete(x.file_hash); });
+  updateBatchBar(); syncCollUI(src);
+}
+function toggleBatchMem(h, src, on){   // 合集内某张：单独勾选加入批量删除；并回填合集头"全选"状态
+  if(on) batchSel.add(h); else batchSel.delete(h);
+  updateBatchBar(); syncCollUI(src);
+}
+function syncCollUI(src){   // 同步该合集头复选框(全选才勾)与已展开成员复选框的视觉勾选状态
+  const wrap = [...document.querySelectorAll('.collwrap')].find(w=>w.dataset.src===src);
+  if(!wrap) return;
+  const segs = qItems.filter(x=>x.source_file_hash===src).map(x=>x.file_hash);
+  const head = wrap.querySelector('.qitem.coll .qchk');
+  if(head) head.checked = segs.length>0 && segs.every(h=>batchSel.has(h));
+  wrap.querySelectorAll('.qchk-mem').forEach(cb=>{ cb.checked = batchSel.has(cb.dataset.hash); });
+}
+function clearBatch(){ batchSel.clear(); document.querySelectorAll('.qchk').forEach(c=>c.checked=false); updateBatchBar(); }
+function updateBatchBar(){
+  const bar = document.getElementById('batchbar'); if(!bar) return;
+  const btn = bar.querySelector('.bapprove');
+  if(btn) btn.textContent = '批量通过选中 (' + batchSel.size + ')';
+  const del = bar.querySelector('.bdelete');
+  if(del) del.textContent = '批量删除选中 (' + batchSel.size + ')';
+  bar.style.display = batchSel.size ? 'block' : 'none';
+}
+async function batchDelete(){
+  const hashes = [...batchSel]; if(!hashes.length) return;
+  // 预判受保护（已通过 Approved / 已对账入账）→ 会被跳过；点击时就先告知，不必删完才知道
+  const byHash = {}; qItems.forEach(it=>{ byHash[it.file_hash] = it; });
+  const protectedN = hashes.filter(h=>{ const it = byHash[h]; return it && (it.approve_status==='Approved' || it.reconciled); }).length;
+  const delN = hashes.length - protectedN;
+  let msg = '确定删除选中的 ' + hashes.length + ' 条记录？删除不可撤销（会留痕到审计轨迹）。';
+  if(protectedN) msg += '\n\n其中 ' + protectedN + ' 条已通过/已对账入账，受保护会被跳过；实际将删除 ' + delN + ' 条。';
+  if(delN === 0){ alert('选中的 ' + hashes.length + ' 条全部已通过/已对账入账，受保护、无法删除（如需作废请走红冲或先撤销对账）。'); return; }
+  if(!confirm(msg)) return;
+  const reason = prompt('删除原因（可选，留痕用）：') || '';
+  let ok = 0, fail = 0; const fails = [];
+  for(const h of hashes){
+    try{
+      const r = await fetch('/api/review/' + encodeURIComponent(h) + '/delete', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({by:'reviewer', reason})});
+      const d = await r.json();
+      if(r.ok && !d.error) ok++; else { fail++; fails.push(h.slice(0,6)); }
+    }catch(e){ fail++; fails.push(h.slice(0,6)); }
+  }
+  batchSel.clear();
+  if(cur && hashes.includes(cur.file_hash)){ document.getElementById('detail').innerHTML = '<div class="muted">已删除该记录。</div>'; cur = null; }
+  await loadQueue();
+  alert('批量删除完成：成功 ' + ok + ' 条'
+        + (fail ? ('，跳过/失败 ' + fail + ' 条（多为已通过或已对账受保护）：#' + fails.join(' #')) : ''));
+}
+async function batchApprove(){
+  const hashes = [...batchSel]; if(!hashes.length) return;
+  if(!confirm('对选中的 ' + hashes.length + ' 条逐条 Approve？（缺关键字段的会被跳过并汇报）')) return;
+  let ok = 0, fail = 0; const fails = [];
+  for(const h of hashes){
+    try{
+      const r = await fetch('/api/review/' + encodeURIComponent(h) + '/action', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'Approved', by:'reviewer'})});
+      const d = await r.json();
+      if(r.ok && !d.error) ok++; else { fail++; fails.push(h.slice(0,6)); }
+    }catch(e){ fail++; fails.push(h.slice(0,6)); }
+  }
+  batchSel.clear();
+  await loadQueue();
+  alert('批量通过完成：成功 ' + ok + ' 条'
+        + (fail ? ('，失败 ' + fail + ' 条（多为缺关键字段）：#' + fails.join(' #')) : ''));
+}
+document.addEventListener('keydown', e=>{
+  const t = e.target;
+  if(t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;   // 输入时不劫持
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  if(document.getElementById('regpop')) return;                  // 弹窗打开时不劫持
+  switch(e.key){
+    case 'j': case 'ArrowDown': e.preventDefault(); moveSel(1); break;
+    case 'k': case 'ArrowUp':   e.preventDefault(); moveSel(-1); break;
+    case 'a': if(cur){ e.preventDefault(); act('Approved', true); } break;
+    case 'r': if(cur){ e.preventDefault(); act('Rejected'); } break;
+    case 'h': if(cur){ e.preventDefault(); act('Hold'); } break;
+    case '?': e.preventDefault(); alert('快捷键\\nj / ↓  下一条\\nk / ↑  上一条\\na  通过并跳到下一条 (Approve & Post)\\nr  拒绝\\nh  待定\\n?  显示本帮助'); break;
+  }
+});
+
+// ---- 学到新规则 → 当场弹窗启用（省得每次去「已学规则」页）----
+let _learnedEnabledAny = false;
+let _LEARNED = [];
+function ruleDesc(r){
+  if(r.note && r.note.trim()) return esc(r.note).replace(/\n/g,'<br>');  // 人工改写的整段说明优先
+  return ruleDescAuto(r);
+}
+function ruleDescAuto(r){
+  const co = esc(r.match_key || '该开票方');
+  const t = esc(r.target || ''), v = esc((r.value||'').slice(0,44));
+  if(r.rule_type==='classification') return `以后 <b>${co}</b> 的发票，记账科目建议 <b>${esc(r.category||'—')} / ${esc(r.account||'—')}</b>`;
+  if(r.rule_type==='content_class') return `内容与「${esc((r.value||'').slice(0,24))}…」相近的发票，科目建议 <b>${esc(r.category||'—')} / ${esc(r.account||'—')}</b>`;
+  if(r.rule_type==='field_default') return `以后 <b>${co}</b> 的发票，<b>核对原件后</b>自动把 <b>${t}</b> 填为「${v}」（不盲填）`;
+  if(r.rule_type==='field_locator') return `遇到标签「<b>${v}</b>」时，把它旁边的值填进 <b>${t}</b>（现场核对，只补空/没把握的字段）`;
+  if(r.rule_type==='line_split') return `以后 <b>${co}</b> 的发票，相似大段明细按此规律拆成多条`;
+  if(r.rule_type==='multi_invoice') return `以后<b>同版面</b>的文件，倾向<b>${r.value==='single'?'当作单张·不自动拆':'当作多张·更积极拆'}</b>（仍核对文档，不写死）`;
+  return '一条新规则';
+}
+// 整句可改：句子里每个可变部分都是内联输入框，仍写回结构化字段
+function _li(k,v,w){ return `<input data-k="${k}" value="${esc(v==null?'':v)}" style="width:${w||90}px;padding:1px 4px;font-size:13px">`; }
+function _lsel(k,v,opts){ return `<select data-k="${k}" style="font-size:13px">${opts.map(o=>`<option value="${o.v}"${v===o.v?' selected':''}>${o.t}</option>`).join('')}</select>`; }
+// 把大白话句子渲染成「填空式」可编辑（内联输入框）
+function editSentence(r){
+  const t=r.rule_type;
+  if(t==='classification') return `以后 ${_li('match_key',r.match_key,130)} 的发票，记账科目建议 ${_li('category',r.category,120)} / ${_li('account',r.account,140)}`;
+  if(t==='content_class') return `内容与「${_li('value',r.value,200)}」相近的发票，科目建议 ${_li('category',r.category,120)} / ${_li('account',r.account,140)}`;
+  if(t==='field_default') return `以后 ${_li('match_key',r.match_key,130)} 的发票，核对原件后自动把 ${_li('target',r.target,110)} 填为「${_li('value',r.value,150)}」`;
+  if(t==='field_locator') return `遇到标签「${_li('value',r.value,130)}」时，把它旁边的值填进 ${_li('target',r.target,110)}`;
+  if(t==='line_split') return `以后 ${_li('match_key',r.match_key,130)} 的发票，相似大段明细按此规律拆分：${_li('value',r.value,240)}`;
+  if(t==='multi_invoice') return `以后同版面的文件，倾向 ${_lsel('value',r.value,[{v:'single',t:'当作单张·不自动拆'},{v:'multi',t:'当作多张·更积极拆'}])}`;
+  return _li('value',r.value,240);
+}
+// 纯文本版自动描述（去掉 <b> 等标签），用于预填 textarea
+function _stripTags(html){ const d=document.createElement('div'); d.innerHTML=html; return d.textContent||''; }
+function editFormHtml(r,i){
+  const noteText = esc((r.note && r.note.trim()) ? r.note : _stripTags(ruleDescAuto(r)));
+  return `<div class="ledit" id="ledit${i}" style="display:none;margin:6px 0;padding:8px 10px;background:#f6f8fb;border-radius:6px;line-height:1.8">
+      <div style="font-size:12px;color:#64748b;margin-bottom:3px">这段话怎么写都行（随便改），写完点下面的按钮，让系统读懂它：</div>
+      <textarea data-k="note" rows="2" style="width:100%;font-size:13px;box-sizing:border-box">${noteText}</textarea>
+      <button class="mbtn" style="margin-top:5px" onclick="parseRuleText(${i})">🔍 解析这句话 → 变成规则</button>
+      <div id="lparse${i}" style="font-size:12px;margin:5px 0"></div>
+      <div style="font-size:12px;color:#64748b;margin:8px 0 3px">系统读懂后填在这里（确认无误、或直接手动改这几处才真正影响识别）：</div>
+      <div style="margin-bottom:6px">${editSentence(r)}</div>
+      <button class="mbtn" onclick="saveLearnedEdit(${i})">保存修改</button>
+      <button class="mbtn" onclick="document.getElementById('ledit${i}').style.display='none'">取消</button>
+    </div>`;
+}
+function promptLearned(learned, reapplyHash){
+  if(!learned || !learned.length) return;
+  _learnedEnabledAny = false;
+  _LEARNED = learned;
+  const rows = learned.map((r,i)=>`
+    <div class="lrow" id="lrow${i}">
+      <div class="ldesc" id="ldesc${i}">${ruleDesc(r)}</div>
+      ${editFormHtml(r,i)}
+      <div class="lbtns">
+        <button class="mbtn" onclick="enableLearned(${r.id},false,${i})">启用${r.can_global?'·仅这家/同版面':''}</button>
+        ${r.can_global?`<button class="mbtn" onclick="enableLearned(${r.id},true,${i})">启用·所有发票通用</button>`:''}
+        <button class="mbtn" title="识别不准可先改" onclick="var e=document.getElementById('ledit${i}');e.style.display=e.style.display==='none'?'block':'none'">✎ 修改</button>
+        <button class="mbtn" onclick="document.getElementById('lrow${i}').classList.add('ldone')">忽略</button>
+      </div>
+    </div>`).join('');
+  const ov = document.createElement('div');
+  ov.className='cutoverlay'; ov.id='learnov';
+  ov.dataset.reapply = reapplyHash || '';
+  ov.innerHTML = `<div class="cutpanel" style="max-width:600px;align-self:center">
+    <div class="cutbar"><b>🧠 刚学到 ${learned.length} 条新规则</b>
+      <span class="muted" style="margin-left:8px">要现在启用吗？（也可以以后在「已学规则」页处理）</span>
+      <span style="flex:1"></span>
+      <button class="mbtn cutok" onclick="finishLearned()">完成</button></div>
+    <div style="padding:10px 14px;max-height:70vh;overflow:auto">${rows}</div></div>`;
+  document.body.appendChild(ov);
+}
+async function parseRuleText(i){
+  const box = document.getElementById('ledit'+i); if(!box) return;
+  const ta = box.querySelector('textarea[data-k="note"]');
+  const text = ta ? ta.value.trim() : '';
+  const st = document.getElementById('lparse'+i);
+  if(!text){ st.innerHTML='<span style="color:#b45309">先写点内容再解析</span>'; return; }
+  const d = await (await fetch('/api/learned/'+_LEARNED[i].id+'/parse',
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})})).json();
+  // 把读懂的字段填进下面的空格（note 不回填 textarea）
+  Object.keys(d.fields||{}).forEach(k=>{
+    if(k==='note') return;
+    const el = box.querySelector('[data-k="'+k+'"]:not(textarea)');
+    if(el) el.value = d.fields[k];
+  });
+  let msg = '';
+  if((d.understood||[]).length) msg += '<span style="color:#15803d">✅ 读懂：'+d.understood.join('；')+'</span>';
+  if((d.missing||[]).length) msg += (msg?'<br>':'')+'<span style="color:#b45309">⚠️ 没读出：'+d.missing.join('、')+'（请手动填下面对应空格）</span>';
+  st.innerHTML = msg || '<span style="color:#64748b">没解析到可用要素</span>';
+}
+async function saveLearnedEdit(i){
+  const box = document.getElementById('ledit'+i); if(!box) return;
+  const patch = {};
+  box.querySelectorAll('[data-k]').forEach(el=>{ patch[el.dataset.k] = el.value.trim(); });
+  const r = await fetch('/api/learned/'+_LEARNED[i].id+'/update', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(patch)});
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok || !d.updated){ alert('保存失败'); return; }
+  Object.assign(_LEARNED[i], patch);                       // 同步本地，重渲染大白话
+  document.getElementById('ldesc'+i).innerHTML = ruleDesc(_LEARNED[i]);
+  box.style.display='none';
+}
+async function enableLearned(id, global, i){
+  const r = await fetch('/api/learned/'+id+(global?'/enable-global':'/enable'), {method:'POST'});
+  if(!r.ok){ alert('启用失败'); return; }
+  _learnedEnabledAny = true;
+  const row = document.getElementById('lrow'+i);
+  if(row){ row.classList.add('ldone'); row.querySelector('.lbtns').innerHTML =
+    `<span style="color:#137333;font-size:12px">✓ 已启用${global?'（所有发票通用）':''}</span>`; }
+}
+async function finishLearned(){
+  const ov = document.getElementById('learnov'); if(!ov) return;
+  const reapplyHash = ov.dataset.reapply;
+  ov.remove();
+  if(_learnedEnabledAny && reapplyHash && cur && cur.file_hash===reapplyHash){
+    if(confirm('已启用新规则。要按新规则重新提取这张发票吗？（保留你手改/确认过的字段）'))
+      await reapplyRules();
+  }
+}
+
+// 按最新规则重新提取（逐条 / 批量）——从原件重跑，保留人工修改/确认，仅未通过
+async function reapplyRules(){
+  if(!cur) return;
+  const r = await fetch('/api/review/' + encodeURIComponent(cur.file_hash) + '/reapply', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({by:'reviewer'})});
+  const d = await r.json();
+  if(d.error){ alert('重新提取失败：' + d.error); return; }
+  if(!d.applied){ alert(d.reason || '未处理'); return; }
+  alert((d.changed && d.changed.length) ? ('已重新提取，变更字段：' + d.changed.join('、') + '（你手改/确认的已保留）') : '已重新提取，无字段变化。');
+  selectRecord(cur.file_hash);
+}
+async function reapplyAll(){
+  // 选范围：1=只发票、2=只流水、3=发票+流水
+  const pick = prompt('对【未通过】记录从原件重新提取，选择范围：\n\n  1 = 全部发票\n  2 = 全部流水\n  3 = 发票 + 流水（全部）\n\n会吃到最新代码+已启用规则，但保留你手改/确认的字段与明细；已通过的跳过。\n\n请输入 1 / 2 / 3：',
+                     DOC_TYPE==='statement'?'2':'1');   // 默认当前所在标签
+  if(pick===null) return;
+  const map = {'1':'invoice','2':'statement','3':null};
+  if(!(pick in map)){ alert('请输入 1、2 或 3。'); return; }
+  const doc_type = map[pick];
+  const label = doc_type==='invoice'?'全部发票':(doc_type==='statement'?'全部流水':'发票+流水');
+  const r = await fetch('/api/review/reapply-all', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({by:'reviewer', doc_type: doc_type})});
+  const d = await r.json();
+  if(d.error){ alert('重新提取失败：' + d.error); return; }
+  await loadQueue();
+  if(cur) selectRecord(cur.file_hash);
+  alert('批量重新提取完成（'+label+'）：扫描 ' + (d.scanned||0) + ' 条，变更 ' + (d.updated||0) + ' 条。');
+}
+
+document.getElementById('filter').addEventListener('change', loadQueue);
+// 进入审核页：先恢复"上次在看的类型"（发票/流水），再加载对应队列，最后恢复"上次在看的文件"
+(async ()=>{
+  const params = new URLSearchParams(location.search);
+  const urlFix = params.get('fix');                    // 从对账页「提取纠错」横幅跳来：fix=invoice|statement
+  let lastT=null; try{ lastT = localStorage.getItem('review:lastType'); }catch(e){}
+  if(urlFix==='statement'){ DOC_TYPE='statement'; syncTypeButtons(); }
+  else if(urlFix){ DOC_TYPE='invoice'; syncTypeButtons(); }
+  else if(lastT==='statement'){ DOC_TYPE='statement'; syncTypeButtons(); }   // 上次在审流水 → 回到流水标签
+  await loadQueue();
+  if(urlFix){                                          // 自动落到第一条"需纠错"的记录并高亮滚动
+    const first = qItems.find(x=>x.needs_fix);
+    if(first){
+      await selectRecord(first.file_hash);
+      const cell = [...document.querySelectorAll('.qitem')].find(x=>x.dataset.hash===first.file_hash);
+      if(cell){ document.querySelectorAll('.qitem').forEach(x=>x.classList.remove('sel')); cell.classList.add('sel'); cell.scrollIntoView({block:'center'}); }
+    }
+    return;
+  }
+  const urlH = params.get('hash');
+  if(urlH){                                            // 深链最优先（比对/重复跳转、上传页「→人工录入」、流水卡片，会自动对齐类型）
+    const ok = await selectRecord(urlH);
+    const urlTxn = params.get('txn');                  // 上传页「最近识别的流水交易」卡片带来的交易下标 → 定位并闪动该行
+    if(ok && urlTxn!=null && urlTxn!==''){
+      const ti = parseInt(urlTxn, 10);
+      if(!isNaN(ti)) setTimeout(()=>{ try{ focusTxn(ti); }catch(e){} }, 250);   // 待详情渲染/图片布局稳定后再定位
+    }
+    return;
+  }
+  let lastH = null; try{ lastH = localStorage.getItem('review:lastHash'); }catch(e){}
+  if(!lastH) return;
+  const ok = await selectRecord(lastH, true);          // 静默：文件已删/入账移出也不报错
+  if(ok){                                              // 高亮并滚到该队列项（在合集里或已翻页外则仅打开详情）
+    const cell = [...document.querySelectorAll('.qitem')].find(x=>x.dataset.hash===lastH);
+    if(cell){ cell.classList.add('sel'); cell.scrollIntoView({block:'center'}); }
+  } else { try{ localStorage.removeItem('review:lastHash'); }catch(e){} }
+})();
+</script>
+<!-- 审核页：左列表、右审核区各自独立的回到顶部 -->
+<button id="toTopList" title="队列列表回到顶部" onclick="__toTopEl('#queue')">↑ 列表</button>
+<button id="toTopDetail" title="审核区回到顶部" onclick="__toTopEl('.detail,.orig,.fields')">↑ 审核</button>
+<style>
+#toTopList,#toTopDetail{position:fixed;bottom:18px;z-index:9999;display:none;padding:9px 13px;border:0;border-radius:22px;background:#1f4e78;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+#toTopList{left:18px}#toTopDetail{right:18px}
+#toTopList:hover,#toTopDetail:hover{background:#163a5a}
+</style>
+<script>
+(function(){
+  function anyScrolled(sel){var s=document.querySelectorAll(sel);for(var i=0;i<s.length;i++){if(s[i].scrollTop>200)return true;}return false;}
+  window.__toTopEl=function(sel){document.querySelectorAll(sel).forEach(function(e){try{e.scrollTo({top:0,behavior:'smooth'});}catch(_){e.scrollTop=0;}});};
+  function upd(){
+    var bl=document.getElementById('toTopList'), bd=document.getElementById('toTopDetail');
+    if(bl)bl.style.display=anyScrolled('#queue')?'block':'none';
+    if(bd)bd.style.display=anyScrolled('.detail,.orig,.fields')?'block':'none';
+  }
+  document.addEventListener('scroll',upd,true);window.addEventListener('resize',upd);setInterval(upd,600);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# 核心依赖（文本型 PDF 识别 + 校验 + 分类 + Excel 导出 + 网页）。体积小、跨平台易装。
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+PyMuPDF==1.25.2
+pdfplumber==0.11.5
+openpyxl==3.1.5
+python-docx==1.2.0
+Pillow==11.1.0
