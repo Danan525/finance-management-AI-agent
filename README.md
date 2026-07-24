@@ -1,5 +1,9 @@
 # Finance Management AI Agent · 本地 AI 财务管理系统
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Tests](https://img.shields.io/badge/tests-513%20passing-brightgreen)
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+
 > **纯本地、数据不出机**的 AI 财务单据处理系统：上传发票 / 银行流水 → 自动识别提取 → 人工审核 → 对账 → 复式记账 → 三张 IFRS 财务报表 → 导出带审计轨迹的 Excel。
 >
 > 全程离线运行、不调用任何云服务、不接外部大模型；识别与记账基于**确定性规则 + 本地 OCR**，可解释、可追溯、可复核。功能货币 USD，IFRS 口径，按月软关账。
