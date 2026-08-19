@@ -1,0 +1,10 @@
+{
+  "_README": "总账科目表覆盖（可选）。把本文件另存为同目录 chart_of_accounts.json 即生效。按编码合并到内置默认：同编码覆盖、新编码追加；缺省或本文件损坏则纯用内置默认，行为不变。改完重启服务（或调用 ledger.accounts.reload_chart()）。",
+  "_字段": "每条 accounts[i]: code 科目编码(判定按它,编码首位约定 1资产/2负债/3权益/4收入/5·6费用) | name 科目全名(过账时账簿的规范名) | type asset|liability|equity|revenue|expense | side debit|credit(正常余额方向) | report_line 报表行归属.",
+  "_report_line 取值": "资产负债表 BalanceSheet:{CashAndEquivalents|Receivables|OtherCurrentAssets|PPE|Payables|TaxPayable|Equity|ShareCapital|RetainedEarnings}；利润表 IncomeStatement:{Revenue|COGS|Opex|FinanceCosts|OtherIncome|IncomeTax}(损益科目只能映射到这些,否则会从净利漏掉→拒绝该条)。",
+  "accounts": [
+    {"code": "4300", "name": "咨询收入 Consulting Revenue", "type": "revenue", "side": "credit", "report_line": "IncomeStatement:Revenue"},
+    {"code": "6660", "name": "研发费用 R&D Expense", "type": "expense", "side": "debit", "report_line": "IncomeStatement:Opex"},
+    {"code": "2250", "name": "预提费用 Accrued Expenses", "type": "liability", "side": "credit", "report_line": "BalanceSheet:Payables"}
+  ]
+}

@@ -12,12 +12,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import json
+from decimal import Decimal
+
 import anyio
 from fastapi import FastAPI, UploadFile, File, Body, Request, Form
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import JSONResponse as _BaseJSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from core import config, db, maintenance
+
+def _json_default(o):
+    """兜底：任何漏转字符串的 Decimal 一律转字符串（金额展示语义），
+    杜绝个别端点因 dict 里塞了原始 Decimal 而整条 500（曾致「待入账」端点崩、前端显示空）。"""
+    if isinstance(o, Decimal):
+        return str(o)
+    raise TypeError("Object of type %s is not JSON serializable" % type(o).__name__)
+
+
+class JSONResponse(_BaseJSONResponse):
+    """全局 JSON 响应：在 starlette 默认基础上加 Decimal 兜底编码，防序列化 500。"""
+
+    def render(self, content) -> bytes:
+        return json.dumps(content, ensure_ascii=False, allow_nan=False,
+                          indent=None, separators=(",", ":"),
+                          default=_json_default).encode("utf-8")
+
+from core import config, counterparty, db, maintenance
 from extraction import pipeline
 from review import service as review
 from reconcile import service as reconcile
@@ -74,6 +95,48 @@ def _warm_ocr_engine() -> None:
 
 
 app = FastAPI(title="财务管理系统", version="0.1.0", lifespan=lifespan)
+
+
+# ---- 全站统一顶部导航栏（注入到每个页面；链接用 window.APP_BASE 运行时生成，主站/演示子路径自适配）----
+_NAV_CSS = """<style>
+  .appnav{position:sticky;top:0;z-index:200;background:#12325a;display:flex;align-items:center;
+    gap:2px;padding:0 12px;min-height:48px;flex-wrap:wrap;box-shadow:0 2px 8px rgba(0,0,0,.18);
+    font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif}
+  .appnav .brand{color:#fff;font-weight:800;font-size:15px;margin-right:14px;white-space:nowrap;
+    text-decoration:none;display:flex;align-items:center;gap:6px}
+  .appnav a.navlink{color:#c7d5e8;text-decoration:none;font-size:13.5px;font-weight:600;
+    padding:9px 13px;border-radius:8px;white-space:nowrap;line-height:1}
+  .appnav a.navlink:hover{background:rgba(255,255,255,.13);color:#fff}
+  .appnav a.navlink.on{background:#fff;color:#12325a}
+  /* 页面自带 header 不再各自 sticky，避免与全局导航叠压 */
+  body > header{position:static !important}
+</style>"""
+
+_NAV_HTML = """<nav class="appnav" id="appnav"></nav>
+<script>(function(){
+  var B = window.APP_BASE || '';
+  var M = [["/","🏠 上传识别"],["/review","📝 审核"],["/reconcile","🔗 对账"],
+           ["/ledger","📒 总账"],["/reports","📊 报表"],["/counterparties","🏢 对手方"],
+           ["/learned","🧠 学习规则"],
+           ["/help","📖 使用说明"]];
+  var p = location.pathname;
+  if (B && p.indexOf(B) === 0) p = p.slice(B.length) || '/';
+  function on(path){ return path === '/' ? (p === '/' || p === '') : (p === path || p.indexOf(path + '/') === 0 || p === path); }
+  var html = '<a class="brand" href="' + B + '/">💰 财务系统</a>';
+  html += M.map(function(it){
+    var tgt = it[0] === '/help' ? ' target="_blank"' : '';
+    return '<a class="navlink' + (on(it[0]) ? ' on' : '') + '" href="' + B + it[0] + '"' + tgt + '>' + it[1] + '</a>';
+  }).join('');
+  document.getElementById('appnav').innerHTML = html;
+})();</script>"""
+
+
+def _page(html: str) -> str:
+    """给整页 HTML 注入全站统一顶部导航（CSS 进 <head>、导航条紧跟 <body>）。"""
+    if "</head>" in html:
+        html = html.replace("</head>", _NAV_CSS + "\n</head>", 1)
+    html = html.replace("<body>", "<body>\n" + _NAV_HTML, 1)
+    return html
 
 
 @app.middleware("http")
@@ -345,6 +408,20 @@ def reconcile_unconfirm_api(body: dict = Body(default={})) -> JSONResponse:
         return JSONResponse({"error": str(e)}, status_code=404)
 
 
+@app.get("/api/reconcile/manual-candidates")
+def reconcile_manual_candidates_api(stmt_hash: str, index: int, q: str = "") -> JSONResponse:
+    """供未匹配流水手工选发票：未匹配发票优先 + 关键词搜全部已提取发票。"""
+    return JSONResponse(reconcile.manual_match_candidates(stmt_hash, int(index), q or ""))
+
+
+@app.post("/api/reconcile/manual-match")
+def reconcile_manual_match_api(body: dict = Body(default={})) -> JSONResponse:
+    """人工把一笔未匹配流水关联到一张发票（建匹配→复用确认护栏；发票未审核会提示先去审核）。"""
+    return JSONResponse(reconcile.manual_match(
+        body.get("stmt_hash", ""), int(body.get("index", -1)),
+        body.get("invoice_hash", ""), body.get("by", "reviewer")))
+
+
 @app.get("/api/reconcile/{match_id}/stmt/{stmt_hash}.png")
 def reconcile_stmt_png(match_id: int, stmt_hash: str):
     """该匹配里此流水的高亮框**已烧入图片**（同坐标系绘制 + 裁剪到匹配行附近），前端直接显示不叠框。"""
@@ -357,7 +434,7 @@ def reconcile_stmt_png(match_id: int, stmt_hash: str):
 @app.get("/reconcile", response_class=HTMLResponse)
 def reconcile_page() -> str:
     """对账确认界面（静态页，调用 /api/reconcile/*）。"""
-    return (config.BASE_DIR / "web" / "reconcile.html").read_text(encoding="utf-8")
+    return _page((config.BASE_DIR / "web" / "reconcile.html").read_text(encoding="utf-8"))
 
 
 # ---------- 总账（module 6）：人工触发入账 + 分录/试算平衡查看 ----------
@@ -365,7 +442,7 @@ def reconcile_page() -> str:
 @app.get("/ledger", response_class=HTMLResponse)
 def ledger_page() -> str:
     """总账界面（静态页，调用 /api/ledger/*）。"""
-    return (config.BASE_DIR / "web" / "ledger.html").read_text(encoding="utf-8")
+    return _page((config.BASE_DIR / "web" / "ledger.html").read_text(encoding="utf-8"))
 
 
 @app.get("/api/ledger/summary")
@@ -391,8 +468,41 @@ def ledger_trial_balance_api() -> JSONResponse:
 
 @app.get("/api/ledger/open")
 def ledger_open_api() -> JSONResponse:
-    """待结算：有未结余额的已过账发票（未结额取自明细辅助账）。"""
-    return JSONResponse({"invoices": ledger.open_view(), "control": ledger.control_view()})
+    """待结算：有未结余额的已过账发票（未结额取自明细辅助账）。
+
+    富化：若该发票有**已确认对账匹配**，带上匹配到的银行现金 + 日期（供「据对账结算」一键带入）。
+    """
+    invs = ledger.open_view()
+    for x in invs:
+        try:
+            m = reconcile.matched_cash_for_invoice(x.get("file_hash", ""))
+        except Exception:
+            m = None
+        if m:
+            x["matched"] = m
+    return JSONResponse({"invoices": invs, "control": ledger.control_view()})
+
+
+@app.post("/api/ledger/settle-from-match")
+def ledger_settle_from_match_api(body: dict = Body(default={})) -> JSONResponse:
+    """据已确认对账匹配结算：用匹配到的银行交易金额清账。body: {file_hash, diff_reason?, by?}
+
+    连接 reconcile → 结算：省去人工重填现金额。仍是人显式触发（按钮），差额(手续费/预扣税等)照常需指定原因。
+    """
+    fh = body.get("file_hash", "")
+    try:
+        m = reconcile.matched_cash_for_invoice(fh)
+        if not m:
+            return JSONResponse({"error": "该发票无已确认对账匹配，无法据此结算"}, status_code=400)
+        if m.get("already_posted"):
+            return JSONResponse({"error": "该匹配的银行流水已作「流水入账」，不能再据对账结算（避免现金双记）；"
+                                          "如需改用结算请先在「已过账分录」红冲那笔流水入账"}, status_code=400)
+        no = ledger.settle_invoice(
+            fh, cash_amount=m["cash"], date=m.get("date", "") or "",
+            diff_reason=body.get("diff_reason") or None, by=body.get("by", "reviewer"))
+        return JSONResponse({"entry_no": no, "cash": m["cash"]})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
 
 
 @app.post("/api/ledger/settle")
@@ -407,6 +517,8 @@ def ledger_settle_api(body: dict = Body(default={})) -> JSONResponse:
             settle_amount=body.get("settle_amount") or None,
             tolerance=body.get("tolerance") or None,
             activity=body.get("activity") or None,
+            date=body.get("date") or "",
+            cash_currency=body.get("cash_currency") or "",
             by=body.get("by", "reviewer"))
         return JSONResponse({"entry_no": no})
     except ValueError as e:
@@ -415,13 +527,230 @@ def ledger_settle_api(body: dict = Body(default={})) -> JSONResponse:
 
 @app.post("/api/ledger/post")
 def ledger_post_api(body: dict = Body(default={})) -> JSONResponse:
-    """人工触发：把一张已审核通过的发票过账为应计分录。body: {file_hash, direction?, by?}"""
+    """人工触发：把一张已审核通过的发票过账为应计分录。
+    body: {file_hash, direction?, by?, as_of?}（外币汇率取录入日 as_of，默认今天；补录可指定）"""
     try:
+        td = body.get("tax_deductible")
         no = ledger.post_invoice_by_hash(
             body.get("file_hash", ""), by=body.get("by", "reviewer"),
-            direction=body.get("direction") or None)
+            direction=body.get("direction") or None,
+            tax_deductible=(None if td is None else bool(td)),
+            as_of=body.get("as_of") or None)
         return JSONResponse({"entry_no": no})
     except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.get("/api/ledger/accounts")
+def ledger_accounts_api() -> JSONResponse:
+    """默认科目表（供手工凭证下拉）。"""
+    return JSONResponse({"accounts": ledger.chart_accounts()})
+
+
+@app.get("/api/ledger/periods")
+def ledger_periods_api() -> JSONResponse:
+    """会计期间 + 关账状态。"""
+    return JSONResponse({"periods": ledger.periods_view()})
+
+
+@app.post("/api/ledger/opening")
+def ledger_opening_api(body: dict = Body(default={})) -> JSONResponse:
+    """建账期初余额。body: {items:[{account,counterparty,amount}], other_lines:[{account,amount,side}], date, by?}"""
+    try:
+        return JSONResponse(ledger.post_opening(
+            items=body.get("items") or [], other_lines=body.get("other_lines") or [],
+            date=body.get("date", ""), by=body.get("by", "admin")))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/ledger/close")
+def ledger_close_api(body: dict = Body(default={})) -> JSONResponse:
+    """人工期末关账：结转损益 + 锁定该期。body: {period 'YYYY-MM', by?}"""
+    try:
+        return JSONResponse(ledger.close_period(body.get("period", ""), by=body.get("by", "admin")))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/ledger/reopen")
+def ledger_reopen_api(body: dict = Body(default={})) -> JSONResponse:
+    """重开已关账期（红冲结转）。body: {period, by?}"""
+    try:
+        return JSONResponse(ledger.reopen_period(body.get("period", ""), by=body.get("by", "admin")))
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/ledger/manual")
+def ledger_manual_api(body: dict = Body(default={})) -> JSONResponse:
+    """人工新建并过账一张手工记账凭证。
+    body: {lines:[{account,debit,credit,memo}], date, memo?, activity?, by?,
+           allow_control?, counterparty?}
+    含应付/应收往来控制账户时须 allow_control=true + counterparty（软护栏）。"""
+    try:
+        no = ledger.post_manual_entry(
+            body.get("lines") or [], date=body.get("date", ""),
+            memo=body.get("memo", ""), activity=body.get("activity") or None,
+            by=body.get("by", "reviewer"),
+            allow_control=bool(body.get("allow_control")),
+            counterparty=body.get("counterparty", "") or "")
+        return JSONResponse({"entry_no": no})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.get("/api/ledger/statement-lines")
+def ledger_statement_lines_api() -> JSONResponse:
+    """待入账银行流水（无对应发票的现金收支），供「流水入账」页。"""
+    return JSONResponse({"lines": ledger.statement_lines_view(only_open=True)})
+
+
+@app.post("/api/ledger/opening-import")
+async def ledger_opening_import_api(
+        file: UploadFile = File(...), dry_run: str = Form("1"),
+        date: str = Form(""), by: str = Form("admin")) -> JSONResponse:
+    """期初余额批量导入：上传 Excel/CSV。dry_run=1 只预览解析结果，dry_run=0 才过账。"""
+    fname = file.filename or "opening"
+    try:
+        data = await file.read(config.MAX_UPLOAD_BYTES + 1)
+        if len(data) > config.MAX_UPLOAD_BYTES:
+            return JSONResponse({"error": "文件过大"}, status_code=400)
+        if not data:
+            return JSONResponse({"error": "空文件"}, status_code=400)
+        if str(dry_run).lower() in ("0", "false", "no"):
+            res = ledger.commit_opening_import(data, fname, date=date, by=by)
+            return JSONResponse({**res, "committed": True})
+        parsed = ledger.preview_opening_import(data, fname)
+        return JSONResponse({**parsed, "committed": False})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.get("/api/fx/rates")
+def fx_rates_api() -> JSONResponse:
+    """汇率表（外币→功能货币，人工录入·固定）。"""
+    from core import fx
+    return JSONResponse({"functional": config.FUNCTIONAL_CURRENCY, "rates": fx.rates()})
+
+
+@app.get("/api/fx/revaluation")
+def fx_revaluation_api(as_of: str = "") -> JSONResponse:
+    """期末外币敞口重估报告（诊断，不记账）：从未结外币发票回溯原币敞口、按 as_of 汇率重估。"""
+    return JSONResponse(ledger.fx_revaluation_view(as_of))
+
+
+@app.post("/api/fx/rate")
+def fx_add_rate_api(body: dict = Body(default={})) -> JSONResponse:
+    """人工录入/更新一条汇率（离线兜底或修正）。body: {currency, date, rate}。"""
+    from core import fx
+    try:
+        res = fx.add_rate(body.get("currency", ""), body.get("date", ""), body.get("rate"))
+        return JSONResponse(res)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/fx/update")
+def fx_update_api(body: dict = Body(default={})) -> JSONResponse:
+    """按日从 provider（默认 Frankfurter）拉取并更新本地汇率表。body: {date?}（默认今天）。
+    只拉公开汇率、写本地；不上传任何内部数据。"""
+    from core import fx
+    try:
+        n, eff = fx.update_rates(body.get("date") or None)
+        return JSONResponse({"updated": n, "effective_date": eff, "provider": fx.get_provider().name})
+    except Exception as e:
+        return JSONResponse({"error": f"拉取汇率失败（{type(e).__name__}）：{e}"}, status_code=502)
+
+
+@app.get("/api/ledger/bank-recon")
+def ledger_bank_recon_api() -> JSONResponse:
+    """银行余额调节：逐张流水单自洽校验 + 入账进度 + 总账银行余额（诊断，不记账）。"""
+    return JSONResponse(ledger.bank_reconciliation_view())
+
+
+@app.post("/api/ledger/post-statement")
+def ledger_post_statement_api(body: dict = Body(default={})) -> JSONResponse:
+    """把一笔无发票的银行流水入账（选对方科目 → Dr/Cr 银行）。
+    body: {stmt_hash, index, counter_account, activity, date?, memo?, by?}"""
+    try:
+        no = ledger.post_statement_entry(
+            body.get("stmt_hash", ""), int(body.get("index")),
+            counter_account=body.get("counter_account", ""),
+            activity=body.get("activity", ""),
+            date=body.get("date") or None, memo=body.get("memo", ""),
+            by=body.get("by", "reviewer"))
+        return JSONResponse({"entry_no": no})
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.get("/counterparties", response_class=HTMLResponse)
+def counterparties_page() -> str:
+    """对手方主数据界面（建档 / 查重归并 / 维护）。"""
+    return _page((config.BASE_DIR / "web" / "counterparties.html").read_text(encoding="utf-8"))
+
+
+@app.get("/api/counterparties")
+def counterparties_api(include_archived: bool = False) -> JSONResponse:
+    """已建档对手方 + 待建档队列（发票上出现但未建档，带查重候选）。"""
+    if include_archived:      # 含归档的列表另算，其余复用 overview（只扫一遍发票）
+        data = counterparty.overview()
+        data["parties"] = counterparty.list_parties(include_archived=True)
+        return JSONResponse(data)
+    return JSONResponse(counterparty.overview())
+
+
+@app.get("/api/counterparties/suggest")
+def counterparties_suggest_api(name: str = "") -> JSONResponse:
+    """按名字查已建档对手方 + 相似候选（供建档查重、对手方输入提示）。"""
+    return JSONResponse({"match": counterparty.resolve(name),
+                         "candidates": counterparty.candidates(name)})
+
+
+@app.get("/api/counterparties/self-candidates")
+def counterparties_self_candidates_api() -> JSONResponse:
+    """侦测"既开票又收票"的名字=很可能是本方主体（尚未建档者），供「一键建档为我方主体」提示。"""
+    return JSONResponse({"candidates": counterparty.self_candidates()})
+
+
+@app.post("/api/counterparties/register")
+def counterparties_register_api(body: dict = Body(default={})) -> JSONResponse:
+    """人工建档新对手方。body: {name, kind?, tax_id?, note?, default_account?, aliases?, force?, by?}
+    疑似与已建档重复且未 force → 400（请先判断并入已有还是确为另一家）。"""
+    try:
+        p = counterparty.register(
+            body.get("name", ""), kind=(",".join(body["kind"]) if isinstance(body.get("kind"), list) else (body.get("kind") or counterparty.KIND_VENDOR)),
+            tax_id=body.get("tax_id", "") or "", note=body.get("note", "") or "",
+            default_account=body.get("default_account", "") or "",
+            aliases=body.get("aliases") or [], force=bool(body.get("force")),
+            by=body.get("by", "reviewer"))
+        return JSONResponse({"party": p})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/counterparties/alias")
+def counterparties_alias_api(body: dict = Body(default={})) -> JSONResponse:
+    """把发票上的一种写法并入已建档对手方（人工确认的查重结果）。body: {cp_id, raw, by?}"""
+    try:
+        p = counterparty.add_alias(int(body.get("cp_id") or 0), body.get("raw", ""),
+                                   by=body.get("by", "reviewer"))
+        return JSONResponse({"party": p})
+    except (ValueError, TypeError) as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@app.post("/api/counterparties/update")
+def counterparties_update_api(body: dict = Body(default={})) -> JSONResponse:
+    """维护对手方字段。body: {cp_id, kind?, tax_id?, note?, default_account?, status?}"""
+    try:
+        p = counterparty.update_party(
+            int(body.get("cp_id") or 0), kind=((",".join(body["kind"]) or None) if isinstance(body.get("kind"), list) else body.get("kind")), tax_id=body.get("tax_id"),
+            note=body.get("note"), default_account=body.get("default_account"),
+            status=body.get("status"))
+        return JSONResponse({"party": p})
+    except (ValueError, TypeError) as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
@@ -443,7 +772,7 @@ def ledger_reverse_api(body: dict = Body(default={})) -> JSONResponse:
 @app.get("/reports", response_class=HTMLResponse)
 def reports_page() -> str:
     """报表界面（静态页，调用 /api/reports/*）。"""
-    return (config.BASE_DIR / "web" / "reports.html").read_text(encoding="utf-8")
+    return _page((config.BASE_DIR / "web" / "reports.html").read_text(encoding="utf-8"))
 
 
 @app.get("/api/reports")
@@ -571,7 +900,7 @@ def review_resplit_api(file_hash: str, body: dict = Body(default={})) -> JSONRes
 @app.get("/learned", response_class=HTMLResponse)
 def learned_page() -> str:
     """已学规则管理页（查看 / 删除人工确认沉淀的规则）。"""
-    return (config.BASE_DIR / "web" / "learned.html").read_text(encoding="utf-8")
+    return _page((config.BASE_DIR / "web" / "learned.html").read_text(encoding="utf-8"))
 
 
 @app.get("/api/learned")
@@ -663,7 +992,7 @@ def review_drop_unapproved_api(body: dict = Body(...)) -> JSONResponse:
 @app.get("/compare", response_class=HTMLResponse)
 def compare_page() -> str:
     """重复发票对比确认界面（左=本次上传，右=疑似重复，可横向滑动）。"""
-    return (config.BASE_DIR / "web" / "compare.html").read_text(encoding="utf-8")
+    return _page((config.BASE_DIR / "web" / "compare.html").read_text(encoding="utf-8"))
 
 
 @app.post("/api/review/{file_hash}/line-item/add")
@@ -995,10 +1324,8 @@ def review_page_image(file_hash: str, n: int, request: Request):
     渲染结果按 file_hash+页码+DPI **缓存**（内容不变、可安全缓存）：带 ETag + max-age，
     浏览器翻页/多人复看走 304 或磁盘缓存，不重复渲染。
     """
-    p = _safe_original(file_hash)
-    if p is None:
-        return JSONResponse({"error": "未找到原件"}, status_code=404)
     # 银行流水（已解析出逐笔交易）：左栏渲染「规范交易表」，每笔带行级 bbox → 点交易行可高亮对应行。
+    # 不依赖原始文件（CSV/结构化导入无页面图也能预览），故置于「找原件」检查之前。
     # 不走页面缓存：交易被人工改动后需即时反映（渲染开销小）。
     _sinv = db.get_invoice(file_hash)
     if _sinv is not None and _sinv.doc_type == "statement" and _sinv.transactions:
@@ -1007,6 +1334,9 @@ def review_page_image(file_hash: str, n: int, request: Request):
         from extraction.extract import textrender as _tr
         png = _tr.render_statement_png(_sinv)
         return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
+    p = _safe_original(file_hash)
+    if p is None:
+        return JSONResponse({"error": "未找到原件"}, status_code=404)
     if p.suffix.lower() in _IMG_SUFFIXES:
         if n != 0:
             return JSONResponse({"error": "页码越界"}, status_code=404)
@@ -1218,7 +1548,7 @@ def review_region_text_api(file_hash: str, body: dict = Body(...)) -> JSONRespon
 @app.get("/review", response_class=HTMLResponse)
 def review_page() -> str:
     """人工审核界面（静态页，调用 /api/review/* 接口）。"""
-    return (config.BASE_DIR / "web" / "review.html").read_text(encoding="utf-8")
+    return _page((config.BASE_DIR / "web" / "review.html").read_text(encoding="utf-8"))
 
 
 def _md_to_html(md: str) -> str:
@@ -1312,7 +1642,7 @@ def help_page() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    return _INDEX_HTML
+    return _page(_INDEX_HTML)
 
 
 _INDEX_HTML = """<!DOCTYPE html>
@@ -1374,13 +1704,6 @@ _INDEX_HTML = """<!DOCTYPE html>
     <h1>财务管理系统</h1>
     <p>纯本地运行 · 数据不出机 · PDF文本优先 / OCR兜底 / 规则解析 / 多重校验</p>
   </div>
-  <nav style="display:flex;gap:12px;flex-wrap:wrap">
-    <a href="/review" class="btn" style="text-decoration:none;background:#fff;color:var(--pri);white-space:nowrap;font-weight:600">人工审核 →</a>
-    <a href="/reconcile" class="btn" style="text-decoration:none;background:#fff;color:var(--pri);white-space:nowrap;font-weight:600">🔗 对账确认 →</a>
-    <a href="/ledger" class="btn" style="text-decoration:none;background:#fff;color:var(--pri);white-space:nowrap;font-weight:600">📒 总账 →</a>
-    <a href="/reports" class="btn" style="text-decoration:none;background:#fff;color:var(--pri);white-space:nowrap;font-weight:600">📊 财务报表 →</a>
-    <a href="/help" target="_blank" class="btn" style="text-decoration:none;background:#fff;color:var(--pri);white-space:nowrap;font-weight:600">📖 使用说明</a>
-  </nav>
 </header>
 <main>
   <div class="bar" style="margin-bottom:12px">
@@ -1435,7 +1758,7 @@ file.addEventListener('change',()=>upload(file.files));
 
 function sevTag(s){const m={warning:'warn',error:'err',critical:'crit',info:'info'};return m[s]||'info';}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function rlink(h,ti){ return '/review?hash='+encodeURIComponent(h)+(ti!=null?'&txn='+ti:''); }   // 深链进流水详情、定位到具体交易行
+function rlink(h,ti){ return '/review?hash='+encodeURIComponent(h)+(ti!=null?'&txn='+ti:''); }   // 深链进流水详情、定位到具体交易行（demo 子路径由 sync-demo 补前缀）
 
 // 识别进度卡片：拉取最近成功识别的流水交易，渲染小表格（点行进详情核对）
 // 仅在「🏦 银行流水」上传标签下显示；切到「📄 发票」标签时隐藏。

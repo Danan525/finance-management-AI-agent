@@ -7,3 +7,5 @@ pdfplumber==0.11.5
 openpyxl==3.1.5
 python-docx==1.2.0
 Pillow==11.1.0
+# 汇率拉取（core/fx.py FrankfurterProvider）：仅 GET 公开汇率、不上送内部数据
+requests>=2.31,<3

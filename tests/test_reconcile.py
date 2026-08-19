@@ -424,5 +424,161 @@ class ReconcileServiceTest(unittest.TestCase):
         self.assertTrue(again)
 
 
+class MatchedCashTest(unittest.TestCase):
+    """对账驱动结算：确认匹配后，reconcile 能回吐「发票→已匹配银行现金」，并据此结算清账。"""
+
+    def setUp(self):
+        self._dir = Path(tempfile.mkdtemp())
+        self._db, self._up = config.DB_PATH, config.UPLOAD_DIR
+        config.DB_PATH = self._dir / "t.db"; config.UPLOAD_DIR = self._dir / "up"
+        config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        db._initialized = False; db.init_db()
+
+    def tearDown(self):
+        config.DB_PATH, config.UPLOAD_DIR = self._db, self._up
+        db._initialized = False
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def _seed_usd(self):
+        """一张 USD 发票 + 一笔金额/发票号一致的银行付款（debit），保证 auto 匹配。"""
+        csv = ("transaction_date,counterparty_name,bank_reference,currency,debit_amount,credit_amount,statement_account_id\n"
+               "2025-02-10,Acme Supplies,PAY AC-2025-1 Acme,USD,1000.00,0,ACC-1\n")
+        (self._dir / "bank.csv").write_text(csv, encoding="utf-8")
+        pipeline.process_upload((self._dir / "bank.csv").read_bytes(), "bank.csv", "statement")
+        p = self._dir / "AC-2025-1.pdf"
+        _make_invoice_pdf(p, "AC-2025-1", "2025-01-20", "Acme Supplies", "USD", "1000.00")
+        fh = pipeline.process_upload(p.read_bytes(), "AC-2025-1.pdf", "invoice")[0].file_hash
+        return fh
+
+    def test_matched_cash_none_without_confirm(self):
+        fh = self._seed_usd()
+        rec.run_matching()                                  # 只是提案，未确认
+        self.assertIsNone(rec.matched_cash_for_invoice(fh))
+
+    def test_matched_cash_after_confirm(self):
+        fh = self._seed_usd()
+        rec.run_matching()
+        # 审核通过后确认（对账结算前置）
+        inv = db.get_invoice(fh); inv.approve_status = "Approved"; db.resave_invoice(inv)
+        rec.confirm_batch("auto")
+        m = rec.matched_cash_for_invoice(fh)
+        self.assertIsNotNone(m)
+        self.assertEqual(Decimal(m["cash"]), Decimal("1000.00"))
+        self.assertEqual(m["txn_count"], 1)
+        self.assertEqual(m["date"], "2025-02-10")
+
+    def test_settle_from_matched_cash_clears_open(self):
+        from ledger import service as ledger
+        fh = self._seed_usd()
+        rec.run_matching()
+        inv = db.get_invoice(fh); inv.approve_status = "Approved"; db.resave_invoice(inv)
+        rec.confirm_batch("auto")
+        # 过账为应计（应付），再据对账金额结算
+        ledger.post_invoice_by_hash(fh, by="t", direction="AP", own_company="Our Co")
+        m = rec.matched_cash_for_invoice(fh)
+        no = ledger.settle_invoice(fh, cash_amount=m["cash"], date=m["date"], by="t")
+        self.assertTrue(no)
+        # 该发票已无未结额
+        open_rows = [x for x in ledger.open_view() if x.get("file_hash") == fh]
+        self.assertTrue(all(Decimal(x["open"]) == Decimal("0") for x in open_rows))
+
+    def _stmt_hash(self):
+        return [h for h, i in db.load_all_invoices().items()
+                if (getattr(i, "doc_type", "") or "") == "statement"][0]
+
+    def test_post_statement_rejected_when_reconciled(self):
+        # H2: 已对账到发票的流水，不能再走「流水入账」（否则银行双记）
+        from ledger import service as ledger
+        from ledger import accounts as LA
+        fh = self._seed_usd(); rec.run_matching()
+        inv = db.get_invoice(fh); inv.approve_status = "Approved"; db.resave_invoice(inv)
+        rec.confirm_batch("auto")
+        with self.assertRaises(ValueError):
+            ledger.post_statement_entry(self._stmt_hash(), 0, LA.FEE, activity="operating")
+
+    def test_matched_cash_flags_already_posted(self):
+        # H2: 先「流水入账」再确认匹配 → matched_cash 标 already_posted，端点据此拒结算
+        from ledger import service as ledger
+        from ledger import accounts as LA
+        fh = self._seed_usd(); rec.run_matching()
+        ledger.post_statement_entry(self._stmt_hash(), 0, LA.FEE, activity="operating")  # 未 confirm，允许
+        inv = db.get_invoice(fh); inv.approve_status = "Approved"; db.resave_invoice(inv)
+        rec.confirm_batch("auto")
+        m = rec.matched_cash_for_invoice(fh)
+        self.assertTrue(m["already_posted"])
+
+
+class ManualMatchTest(unittest.TestCase):
+    """未自动配上的流水，人工指定发票配对（建匹配→复用确认护栏）。"""
+    def setUp(self):
+        self._dir = Path(tempfile.mkdtemp())
+        self._db, self._up = config.DB_PATH, config.UPLOAD_DIR
+        config.DB_PATH = self._dir / "t.db"; config.UPLOAD_DIR = self._dir / "up"
+        config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        db._initialized = False; db.init_db()
+
+    def tearDown(self):
+        config.DB_PATH, config.UPLOAD_DIR = self._db, self._up
+        db._initialized = False
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def _seed_unmatched(self):
+        # 一笔无发票号线索的流水 + 一张金额对不上的发票 → 两者都进「未匹配」单边
+        csv = ("transaction_date,counterparty_name,bank_reference,currency,debit_amount,credit_amount,statement_account_id\n"
+               "2025-03-01,Random Vendor,MISC PAYMENT,USD,300.00,0,ACC-9\n")
+        (self._dir / "b2.csv").write_text(csv, encoding="utf-8")
+        pipeline.process_upload((self._dir / "b2.csv").read_bytes(), "b2.csv", "statement")
+        p = self._dir / "ZZ-999.pdf"; _make_invoice_pdf(p, "ZZ-999", "2025-03-01", "Random Vendor", "USD", "999.00")
+        pipeline.process_upload(p.read_bytes(), "ZZ-999.pdf", "invoice")
+        rec.run_matching()
+
+    def _hashes(self):
+        sh = inv_h = None
+        for h, i in db.load_all_invoices().items():
+            if (i.doc_type or "") == "statement": sh = h
+            else: inv_h = h
+        return sh, inv_h
+
+    def test_candidates_unmatched_first_and_search(self):
+        self._seed_unmatched()
+        sh, inv_h = self._hashes()
+        cands = rec.manual_match_candidates(sh, 0, "")
+        self.assertTrue(any(c["file_hash"] == inv_h and c["group"] == "unmatched" for c in cands["candidates"]))
+        # 关键词搜全部（供应商/票号）
+        hit = rec.manual_match_candidates(sh, 0, "zz-999")
+        self.assertTrue(any(c["file_hash"] == inv_h for c in hit["candidates"]))
+
+    def test_manual_match_links_and_confirms(self):
+        self._seed_unmatched()
+        sh, inv_h = self._hashes()
+        db.get_invoice(inv_h)                                  # 先审核通过（应计），再手工对账结算
+        i = db.get_invoice(inv_h); i.approve_status = "Approved"; db.resave_invoice(i)
+        res = rec.manual_match(sh, 0, inv_h)
+        self.assertTrue(res["ok"], res)
+        used_inv, used_txn = db.confirmed_member_refs()
+        self.assertIn(inv_h, used_inv)
+        self.assertIn((sh, 0), used_txn)
+        # 残留单边「未匹配」proposed 已清（不再堆在待定队列）
+        singles = [m for m in db.list_matches(status="proposed") if not (m["invoices"] and m["txns"])]
+        self.assertFalse(any(inv_h in m["invoices"] or (sh, 0) in m["txns"] for m in singles))
+
+    def test_manual_match_unapproved_invoice_needs_review(self):
+        self._seed_unmatched()
+        sh, inv_h = self._hashes()                              # 未审核发票
+        res = rec.manual_match(sh, 0, inv_h)
+        self.assertTrue(res.get("needs_invoice_review"))        # 先去审核，不在此顺手盖章
+        self.assertEqual(res.get("invoice_hash"), inv_h)
+        used_inv, _ = db.confirmed_member_refs()
+        self.assertNotIn(inv_h, used_inv)                       # 未确认结算
+
+    def test_manual_match_rejects_already_reconciled_member(self):
+        self._seed_unmatched()
+        sh, inv_h = self._hashes()
+        i = db.get_invoice(inv_h); i.approve_status = "Approved"; db.resave_invoice(i)
+        self.assertTrue(rec.manual_match(sh, 0, inv_h)["ok"])   # 先配上
+        res2 = rec.manual_match(sh, 0, inv_h)                   # 再配 → 成员已被占用
+        self.assertFalse(res2["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>对手方主数据</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,"Microsoft YaHei",sans-serif;margin:0;background:#f5f6f8;color:#222;font-size:14px;line-height:1.5;display:flex;flex-direction:column;min-height:100vh}
+  header{background:#1f4e78;color:#fff;padding:14px 20px;flex:none}
+  header h1{font-size:19px;margin:0;font-weight:700}
+  .htitle p{margin:3px 0 0;font-size:12px;opacity:.85}
+  #summary{font-size:13px;color:#e6eef7;margin-top:11px}
+  #summary b{color:#fff}
+  main{padding:16px 20px;max-width:1080px;width:100%;box-sizing:border-box;margin:0 auto}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .tab{padding:8px 14px;border:1px solid #d5dbe3;background:#fff;color:#425466;border-radius:20px;cursor:pointer;font-size:13px;font-weight:600}
+  .tab.on{background:#1f4e78;color:#fff;border-color:#1f4e78}
+  .tab .n{display:inline-block;min-width:18px;text-align:center;margin-left:4px;background:rgba(0,0,0,.12);border-radius:10px;padding:0 6px;font-size:12px}
+  .tab.on .n{background:rgba(255,255,255,.25)}
+  .card{background:#fff;border:1px solid #e2e6ec;border-radius:10px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .chead{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#f7f9fc;border-bottom:1px solid #eef1f5;flex-wrap:wrap}
+  .chead .nm{font-weight:700;color:#1f4e78}
+  .chead .cnt{margin-left:auto;color:#425466;font-size:13px}
+  .cbody{padding:11px 14px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+  .badge{font-size:12px;font-weight:700;padding:2px 9px;border-radius:12px}
+  .b-vendor{background:#fff0e0;color:#b5610a}.b-customer{background:#e7f0ff;color:#1b4fd0}.b-both{background:#eaf7ec;color:#137333}.b-self{background:#ece7ff;color:#4b32a8}
+  .roles .rk{margin-right:10px;font-size:13px;white-space:nowrap}.roles .rk input{margin-right:3px;vertical-align:-1px}
+  .cand{background:#f7f9fc;border:1px solid #e6ebf2;border-radius:8px;padding:8px 11px;margin-bottom:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .cand .sc{font-variant-numeric:tabular-nums;color:#8a5a00;font-weight:700}
+  .cand.same{background:#fff4e5;border-color:#f0c98a}
+  .ok{background:#137333;color:#fff;border:0;padding:6px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+  .ok:hover{background:#0f5f2a}
+  .no{background:#fff;color:#c02626;border:1px solid #e6b3b3;padding:6px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+  .lite{background:#fff;color:#1f4e78;border:1px solid #c9d6e5;padding:6px 12px;border-radius:8px;cursor:pointer;font-weight:600}
+  .empty{padding:40px;text-align:center;color:#8a95a3}
+  .muted{color:#8a95a3}
+  .warnbar{background:#fff4e5;border:1px solid #f0c98a;color:#8a5a00;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px}
+  input,select{font-size:13px;padding:4px 7px;border:1px solid #cbd2db;border-radius:6px}
+  table.tb{width:100%;border-collapse:collapse;font-size:13px}
+  table.tb td,table.tb th{padding:7px 14px;border-top:1px solid #f0f2f5;text-align:left;vertical-align:top}
+  table.tb th{color:#8a95a3;font-size:12px;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <div class="htitle"><h1>🏢 对手方主数据</h1>
+    <p>供应商 / 客户建档由人确认：新对手方先进待建档队列，系统只给查重候选（绝不自动建档或自动合并）</p></div>
+  <div id="summary">加载中…</div>
+</header>
+<main>
+  <div class="tabs" id="tabs"></div>
+  <div id="body"><div class="empty">加载中…</div></div>
+</main>
+<script>
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function postJSON(url, body){
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                               body: JSON.stringify(body||{})});
+    let d = null; try{ d = await r.json(); }catch(_e){}
+    if(!r.ok){ alert('操作失败（HTTP '+r.status+'）'+((d&&d.error)?('：'+d.error):'')); return null; }
+    return d || {};
+  }catch(e){ alert('网络错误，操作可能未生效，请刷新确认：'+e); return null; }
+}
+async function getJSON(url){ try{ return await (await fetch(url)).json(); }catch(e){ return {}; } }
+
+const KINDS = [['vendor','供应商'],['customer','客户'],['both','两者'],['self','本方主体（我方公司）']];
+// 多角色：一个实体可同时是 我方(self)+供应商(vendor)+客户(customer)。kind 存逗号分隔角色串；both=vendor+customer。
+const ROLES = [['self','我方'],['vendor','供应商'],['customer','客户']];
+const roleLabel = r => (ROLES.find(x=>x[0]===r)||['','?'])[1];
+function parseRoles(kind){
+  const out=[]; String(kind||'').split(',').forEach(t=>{ t=t.trim();
+    if(t==='both'){ out.push('vendor','customer'); } else if(['self','vendor','customer'].indexOf(t)>=0){ out.push(t); } });
+  return out.filter((v,i)=>out.indexOf(v)===i);
+}
+const kindLabel = kind => { const rs=parseRoles(kind); return rs.length?rs.map(roleLabel).join('+'):'?'; };
+function kindClass(kind){ const rs=parseRoles(kind);
+  if(rs.length===2 && rs.indexOf('vendor')>=0 && rs.indexOf('customer')>=0) return 'b-both';
+  return 'b-'+(rs[0]||'vendor'); }
+// 已建档：勾选/取消一个角色 → 重算 kind 落库（去到空则拒绝、提示用停用）
+async function doToggleRole(id, role, checked, curKind){
+  const rs = parseRoles(curKind).filter(r=>r!==role); if(checked) rs.push(role);
+  const kind = rs.join(',');
+  if(!kind){ alert('至少保留一个角色；如要停用请点「停用」'); await load(); return; }
+  const r = await postJSON('/api/counterparties/update', {cp_id:id, kind:kind});
+  await load();
+}
+// 待建档表单：勾选角色 → 更新该项 FORM.kind
+function ptoggle(key, role, checked){ const f = FORM[key] = FORM[key] || {};
+  const rs = parseRoles(f.kind).filter(r=>r!==role); if(checked) rs.push(role);
+  f.kind = rs.join(','); }
+let CUR = (function(){ try{ return localStorage.getItem('cp:tab')||'pending'; }catch(e){ return 'pending'; } })();
+let DATA = {parties:[], pending:[], summary:{}};
+let FORM = {};      // 待建档项的表单状态（按归一化 raw 存）
+
+async function load(){
+  DATA = await getJSON('/api/counterparties');
+  const s = DATA.summary||{};
+  document.getElementById('summary').innerHTML =
+    `已建档 <b>${s.parties||0}</b> 个　待建档 <b>${(s.pending||0)>0?'<span style="color:#ffcf9e">'+s.pending+'</span>':0}</b> 个` +
+    (s.truncated ? `　<span style="color:#ffcf9e">（本页只显示前 ${s.pending_shown} 条，处理完会继续显示后面的）</span>` : '');
+  render();
+}
+function render(){
+  const tabs = [{k:'pending',label:'待建档',n:(DATA.pending||[]).length},
+                {k:'parties',label:'已建档',n:(DATA.parties||[]).length}];
+  document.getElementById('tabs').innerHTML = tabs.map(t=>
+    `<button class="tab ${CUR===t.k?'on':''}" onclick="go('${t.k}')">${t.label}<span class="n">${t.n}</span></button>`).join('');
+  CUR==='pending' ? renderPending() : renderParties();
+}
+function go(k){ CUR=k; try{ localStorage.setItem('cp:tab',k); }catch(e){} render(); }
+
+// ---- 待建档队列：建档为新对手方 / 并入已有 ----
+function renderPending(){
+  const list = DATA.pending||[];
+  if(!list.length){
+    document.getElementById('body').innerHTML =
+      '<div class="empty">没有待建档的对手方。发票上出现的新供应商/客户会自动出现在这里等人确认。</div>';
+    return;
+  }
+  let h = '<div class="warnbar">这些对手方出现在发票上但尚未建档。请逐个确认：<b>并入已有</b>（同一家的另一种写法）或<b>建档为新对手方</b>。系统只按名称相似度给候选，不会自动决定。<br>发票上的「客户」常是<b>你自己公司</b>的名字——把它建档为类型「本方主体（我方公司）」即可，之后不再出现在这里。</div>';
+  for(const it of list){
+    const key = it.raw;
+    const f = FORM[key] || (FORM[key] = {name:it.raw, kind:it.kind, tax_id:'', note:''});
+    const cands = (it.candidates||[]).map(c=>`
+      <div class="cand ${c.likely_same?'same':''}">
+        <span>${esc(c.name)}</span><span class="badge ${kindClass(c.kind)}">${kindLabel(c.kind)}</span>
+        <span class="sc">相似 ${Math.round(c.score*100)}%</span>
+        ${c.likely_same?'<span class="muted">疑似同一家</span>':''}
+        <button class="lite" style="margin-left:auto" onclick="doAlias(${c.id}, ${JSON.stringify(it.raw).replace(/"/g,'&quot;')})">↳ 并入此对手方</button>
+      </div>`).join('');
+    const samples = (it.samples||[]).map(s=>esc(s.invoice_no||s.file_name||'')).filter(Boolean).join('、');
+    h += `<div class="card">
+      <div class="chead"><span class="nm">${esc(it.raw)}</span>
+        <span class="badge ${kindClass(it.kind)}">${kindLabel(it.kind)}</span>
+        <span class="cnt">出现 ${it.count} 次${samples?'　来源：'+samples:''}</span></div>
+      <div class="cbody">
+        ${cands || '<div class="muted" style="margin-bottom:8px">没有相似的已建档对手方。</div>'}
+        <div class="row">
+          <label>规范名 <input value="${esc(f.name)}" oninput="fset(${JSON.stringify(key).replace(/"/g,'&quot;')},'name',this.value)" style="width:230px"></label>
+          <label>角色（可多选）<span class="roles">${ROLES.map(r=>`<label class="rk"><input type="checkbox" ${parseRoles(f.kind).indexOf(r[0])>=0?'checked':''} onchange="ptoggle(${JSON.stringify(key).replace(/"/g,'&quot;')},'${r[0]}',this.checked)">${r[1]}</label>`).join('')}</span></label>
+          <label>税号 <input value="${esc(f.tax_id)}" oninput="fset(${JSON.stringify(key).replace(/"/g,'&quot;')},'tax_id',this.value)" style="width:130px"></label>
+          <label>备注 <input value="${esc(f.note)}" oninput="fset(${JSON.stringify(key).replace(/"/g,'&quot;')},'note',this.value)" style="width:160px"></label>
+          <button class="ok" onclick="doRegister(${JSON.stringify(key).replace(/"/g,'&quot;')})">✓ 建档为新对手方</button>
+        </div>
+        <div class="muted" style="font-size:12px">建档后会把发票上的写法「${esc(it.raw)}」记为该对手方的别名，下次同写法自动识别。</div>
+      </div></div>`;
+  }
+  document.getElementById('body').innerHTML = h;
+}
+function fset(key,k,v){ (FORM[key]=FORM[key]||{})[k]=v; }
+
+async function doRegister(key){
+  const f = FORM[key]||{};
+  if(!(f.name||'').trim()){ alert('请填规范名'); return; }
+  let r = await postJSON('/api/counterparties/register',
+    {name:f.name, kind:f.kind||'vendor', tax_id:f.tax_id||'', note:f.note||'', aliases:[key]});
+  if(r===null){
+    if(confirm('若确认这是另一家公司（与相似的已建档对手方不同），点确定强制建档；否则取消并选择「并入此对手方」。')){
+      r = await postJSON('/api/counterparties/register',
+        {name:f.name, kind:f.kind||'vendor', tax_id:f.tax_id||'', note:f.note||'', aliases:[key], force:true});
+    }
+  }
+  if(r&&r.party){ delete FORM[key]; await load(); }
+}
+async function doAlias(cpId, raw){
+  if(!confirm('确认「'+raw+'」与该对手方是同一家？将记为其别名（可在已建档页查看）。')) return;
+  const r = await postJSON('/api/counterparties/alias', {cp_id:cpId, raw:raw});
+  if(r&&r.party){ await load(); }
+}
+
+// ---- 已建档：维护字段 / 加别名 / 停用 ----
+function renderParties(){
+  const list = DATA.parties||[];
+  if(!list.length){ document.getElementById('body').innerHTML='<div class="empty">还没有建档的对手方。</div>'; return; }
+  let h = '<div class="card"><table class="tb"><tr><th>对手方</th><th>类型</th><th>税号</th><th>别名（发票上的写法）</th><th>备注</th><th></th></tr>';
+  for(const p of list){
+    h += `<tr>
+      <td><b>${esc(p.name)}</b><div class="muted" style="font-size:12px">归一化键 ${esc(p.norm)}</div></td>
+      <td class="roles">${ROLES.map(r=>`<label class="rk"><input type="checkbox" ${parseRoles(p.kind).indexOf(r[0])>=0?'checked':''} onchange="doToggleRole(${p.id},'${r[0]}',this.checked,'${esc(p.kind)}')">${r[1]}</label>`).join('')}</td>
+      <td><input value="${esc(p.tax_id)}" onchange="doUpdate(${p.id},'tax_id',this.value)" style="width:120px"></td>
+      <td>${(p.aliases||[]).map(a=>`<div>${esc(a)}</div>`).join('') || '<span class="muted">—</span>'}
+          <div style="margin-top:4px"><input id="al-${p.id}" placeholder="加别名写法" style="width:150px">
+            <button class="lite" onclick="addAlias(${p.id})">+ 别名</button></div></td>
+      <td><input value="${esc(p.note)}" onchange="doUpdate(${p.id},'note',this.value)" style="width:150px"></td>
+      <td><button class="no" onclick="doUpdate(${p.id},'status','archived')">停用</button></td>
+    </tr>`;
+  }
+  h += '</table></div><div class="muted" style="font-size:12px">停用只是归档（不删历史）；名称需更改时请新建档并把旧写法记为别名。</div>';
+  document.getElementById('body').innerHTML = h;
+}
+async function doUpdate(id, field, value){
+  const body = {cp_id:id}; body[field] = value;
+  const r = await postJSON('/api/counterparties/update', body);
+  if(r&&r.party){ await load(); }
+}
+async function addAlias(id){
+  const el = document.getElementById('al-'+id);
+  const raw = (el&&el.value||'').trim();
+  if(!raw){ alert('请填别名写法'); return; }
+  const r = await postJSON('/api/counterparties/alias', {cp_id:id, raw:raw});
+  if(r&&r.party){ await load(); }
+}
+
+load();
+</script>
+</body>
+</html>

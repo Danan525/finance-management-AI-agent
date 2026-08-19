@@ -16,6 +16,8 @@ from decimal import Decimal
 from itertools import combinations
 from typing import Dict, List, Optional, Tuple
 
+from extraction.parse import amount as _amt   # 币种感知的金额一致容差（match_tolerance）
+
 # 分数阈值与权重
 AUTO = 80          # ≥ 此分且唯一 → 自动（待批量）
 MED = 50           # ≥ 此分 → 至少进人工确认
@@ -115,7 +117,7 @@ def score_pair(inv: dict, txn: dict) -> Tuple[int, List[str], Optional[Decimal]]
     if ia is not None and ta is not None and not ccy_conflict:
         delta = (ia - ta)
         ccy = inv_ccy or txn_ccy or ""
-        if delta.copy_abs() <= Decimal("0.01"):
+        if delta.copy_abs() <= _amt.match_tolerance(ccy):   # 按币种小数位(3 位币种收紧到 0.001)
             score += W_AMT_EXACT
             basis.append("金额+币种完全一致" if both_ccy else "金额一致（一方未标注币种，按可比处理，请核对币种）")
             delta = Decimal("0")

@@ -15,7 +15,14 @@ from .engine import ZERO, JournalEntry, JournalLine, _dec
 
 
 def _check_activity(entry: JournalEntry, activity) -> None:
-    """现金流活动类别校验：动现金必须标（经营/投资/筹资）；不动现金/内部腾挪不许标。"""
+    """现金流活动类别校验：动现金必须标（经营/投资/筹资）；不动现金/内部腾挪不许标。
+
+    期初建账(source_kind='opening')豁免：期初现金是**期初余额**、不是本期现金流量,
+    不标活动、也不计入现金流量表本期净流(报表侧把它算作期初现金)。"""
+    if entry.source_kind == "opening":
+        if activity is not None:
+            raise ValueError(f"期初建账分录不应指定现金流活动类别：{entry.memo}")
+        return
     delta = entry.cash_delta()
     if delta != ZERO:
         if activity not in A.ACTIVITIES:
@@ -24,6 +31,22 @@ def _check_activity(entry: JournalEntry, activity) -> None:
                 f"（operating/investing/financing）：{entry.memo}")
     elif activity is not None:
         raise ValueError(f"分录不动用现金（或现金内部腾挪），不应指定活动类别：{entry.memo}")
+
+
+#: 往来控制账户由引擎按凭证自动生成的来源（其明细依据来自发票/结算，不需另填对手方）
+_ENGINE_KINDS = ("invoice", "settlement", "closing", "reversal")
+
+
+def _check_control(entry: JournalEntry, counterparty) -> None:
+    """兜底护栏：非引擎来源（手工等）动往来控制账户，必须给对手方——否则往来无从追踪、
+    控制账户对账的明细侧也无法归属。"""
+    if entry.source_kind in _ENGINE_KINDS:
+        return
+    ctl = [l.account for l in entry.lines if A.is_control(l.account)]
+    if ctl and not (counterparty or "").strip():
+        raise ValueError(
+            "分录动用往来控制账户（%s）必须指定对手方（counterparty）：%s"
+            % ("、".join(ctl), entry.memo))
 
 
 def period_of(date: str) -> str:
@@ -48,7 +71,7 @@ def existing_posted(source_kind: str, source_hash: str,
 
 
 def post_entry(entry: JournalEntry, by: str, at: str,
-               settle_amount=None, activity=None) -> str:
+               settle_amount=None, activity=None, counterparty=None) -> str:
     """把一张分录以 Posted 落库并分配凭证号；返回 entry_no。
 
     平衡硬校验 + 幂等（应计来源已有 Posted 分录则抛 ValueError）都在**同一事务**内完成。
@@ -56,9 +79,14 @@ def post_entry(entry: JournalEntry, by: str, at: str,
     settle_amount：结算分录本次清账票面额（明细辅助账用）。
     activity：现金流活动类别——**动用现金及等价物的分录必须标**（经营/投资/筹资，直接法前提，E5）；
     不动现金或现金口径内部腾挪（cash_delta=0）则必须为 None（否则拒绝）。
+    counterparty：对手方——**非引擎来源的分录动往来控制账户（应付/应收）时必填**（软护栏兜底）。
     """
     entry.assert_balanced()
     _check_activity(entry, activity)
+    _check_control(entry, counterparty)
+    # M2:发票来源必须有幂等键(file_hash),否则空 hash 跳过查重 → 可重复入账、双记应付/费用
+    if entry.source_kind == "invoice" and not (entry.source_hash or "").strip():
+        raise ValueError(f"发票来源分录缺 source_hash（幂等键），拒绝过账：{entry.memo}")
     period = period_of(entry.date)
     dr, cr = entry.totals()
 
@@ -76,6 +104,26 @@ def post_entry(entry: JournalEntry, by: str, at: str,
             if dup:
                 conn.rollback()
                 raise ValueError(f"该来源已入账（{dup['entry_no']}），拒绝重复过账")
+        # 软关账：目标期已关账 → 拒绝过账（调整只能落开放期；重开需先 reopen_period）
+        prow = conn.execute("SELECT status FROM periods WHERE period=?", (period,)).fetchone()
+        if prow and prow["status"] == "closed":
+            conn.rollback()
+            raise ValueError(f"会计期间 {period} 已关账，拒绝过账（如需调整请先重开该期）")
+        # M3:结算超额防护——在写锁内复算(已结+本次 ≤ 应计全额),杜绝并发 TOCTOU 超额结算
+        if entry.source_kind == "settlement" and entry.source_hash and settle_amount is not None:
+            acc = conn.execute(
+                "SELECT total_debit FROM journal_entries WHERE source_kind='invoice' "
+                "AND source_hash=? AND status='Posted' AND reverses_id IS NULL LIMIT 1",
+                (entry.source_hash,)).fetchone()
+            if acc:
+                gross = _dec(acc["total_debit"])
+                prior = sum((_dec(r["settle_amount"]) for r in conn.execute(
+                    "SELECT settle_amount FROM journal_entries WHERE source_kind='settlement' "
+                    "AND source_hash=? AND status='Posted'", (entry.source_hash,)).fetchall()), ZERO)
+                if prior + _dec(settle_amount) > gross:
+                    conn.rollback()
+                    raise ValueError(
+                        f"超额结算：已结 {prior} + 本次 {settle_amount} > 应计全额 {gross}")
         # 期间内顺序号
         n = conn.execute(
             "SELECT COUNT(*) AS c FROM journal_entries WHERE period=?", (period,)
@@ -84,13 +132,13 @@ def post_entry(entry: JournalEntry, by: str, at: str,
         cur = conn.execute(
             "INSERT INTO journal_entries(entry_no, date, memo, source_kind, source_hash, "
             "source_ref, status, total_debit, total_credit, period, reverses_id, "
-            "settle_amount, activity, created_by, created_at, posted_by, posted_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "settle_amount, activity, counterparty, created_by, created_at, posted_by, posted_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (entry_no, entry.date, entry.memo, entry.source_kind, entry.source_hash,
              entry.source_ref, "Posted", str(dr), str(cr), period,
              entry.reverses_id if hasattr(entry, "reverses_id") else None,
              str(settle_amount) if settle_amount is not None else None, activity,
-             by, at, by, at))
+             (counterparty or "").strip() or None, by, at, by, at))
         eid = cur.lastrowid
         for seq, l in enumerate(entry.lines):
             conn.execute(
@@ -121,6 +169,7 @@ def _row_to_entry(c, row) -> JournalEntry:
     e.reverses_id = row["reverses_id"]
     e._id = row["id"]
     e.activity = row["activity"] if "activity" in row.keys() else None
+    e.counterparty = row["counterparty"] if "counterparty" in row.keys() else None
     return e
 
 
@@ -170,13 +219,16 @@ def reverse_entry(entry_no: str, by: str, at: str) -> str:
         dr, cr = src.totals()
         # 红冲现金分录：反向现金流仍归同一活动类别，使 CFS 中原流入/流出被抵消
         rev_activity = row["activity"] if "activity" in row.keys() else None
+        # 红冲沿用原分录对手方，使往来明细归属（控制账户对账）与原分录一致、相抵为零
+        rev_cp = row["counterparty"] if "counterparty" in row.keys() else None
         cur = conn.execute(
             "INSERT INTO journal_entries(entry_no, date, memo, source_kind, source_hash, "
             "source_ref, status, total_debit, total_credit, period, reverses_id, "
-            "activity, created_by, created_at, posted_by, posted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "activity, counterparty, created_by, created_at, posted_by, posted_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (rev_no, src.date, "红冲 " + src.memo, "reversal", src.source_hash,
              src.source_ref, "Posted", str(cr), str(dr), period, row["id"],
-             rev_activity, by, at, by, at))
+             rev_activity, rev_cp, by, at, by, at))
         rid = cur.lastrowid
         for seq, l in enumerate(src.lines):                 # 借贷互换
             conn.execute(

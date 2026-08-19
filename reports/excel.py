@@ -146,7 +146,8 @@ def _cashflow(ws, cf):
 def _checks(ws, ck):
     _hrow(ws, 1, ["勾稽项 Check", "说明", "结果", "差异/明细"])
     r = 2
-    for key in ("E1_balance_sheet_balanced", "E3_cash_tie", "E6_all_classified"):
+    for key in ("E1_balance_sheet_balanced", "E2_income_to_retained", "E3_cash_tie",
+                "E4_cfo_direct_indirect", "E6_all_classified"):
         c = ck.get(key)
         if not c:
             continue

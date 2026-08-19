@@ -1,0 +1,8 @@
+科目,对手方,借方,贷方,摘要
+1002 银行存款 Bank,,120000.00,,期初银行余额
+1500 固定资产 PP&E,,50000.00,,期初固定资产
+1509 累计折旧 Accumulated Depreciation,,,8000.00,期初累计折旧
+2211 应交税费-增值税 VAT Payable,,,3000.00,期初应交增值税
+3100 实收资本 Share Capital,,,100000.00,期初实收资本
+1100 应收账款 Accounts Receivable,Acme Corp,15000.00,,期初应收-Acme
+2100 应付账款 Accounts Payable,Globex Ltd,,9000.00,期初应付-Globex

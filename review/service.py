@@ -552,10 +552,13 @@ def resplit(file_hash: str, mode: str = "single", by: str = "reviewer",
     if mode not in ("single", "auto", "manual"):
         raise ValueError(f"未知切分模式：{mode}")
     src_hash, src_name, src_path, old_hashes = _collection_of(file_hash)
+    from ledger import service as _ledger
     for h in old_hashes:                                   # 已入账不可重切
         o = db.get_invoice(h)
         if o is not None and _status(o) == APPROVED:
             raise ValueError("该文件已有发票确认入账，不能重新切分；如需更正请先撤销/红冲")
+        if _ledger.posted_statement_indices(h):            # 含已流水入账的交易 → 重切会重排下标、致重复入账
+            raise ValueError("该流水已有交易做了流水入账，不能重新切分；如需更正请先在「已过账分录」红冲相关流水入账")
     if not src_path or not Path(src_path).exists():
         raise ValueError("源文件已不可用，无法重新切分")
 
@@ -780,13 +783,17 @@ def save_transaction(file_hash: str, index: int, field: str, value,
     inv = db.get_invoice(file_hash)
     if inv is None:
         raise KeyError(f"未找到记录 {file_hash}")
-    # 按笔锁（而非整条锁死）：让同一流水里未对账的交易仍可编辑；已对账的笔不可改、且不可增删（增删会重排下标）
-    rec_idx = _reconciled_txn_indices(file_hash)
+    # 按笔锁（而非整条锁死）：未对账/未入账的交易仍可编辑；**已对账或已流水入账**的笔不可改、
+    # 且不可增删——增删会重排下标，而流水入账的幂等键基于下标，漂移后会导致同一笔现金重复入账
+    # （自检发现，2026-08-11 修：入账下标须与对账下标一并锁定）。
+    from ledger import service as _ledger
+    locked_idx = _reconciled_txn_indices(file_hash) | _ledger.posted_statement_indices(file_hash)
     if field in ("__add__", "__del__"):
-        if rec_idx:
-            raise ValueError("该流水已有交易对账入账，不能增删交易行（会打乱行号、破坏已确认对应）；请先在对账页撤销相关匹配")
-    elif index in rec_idx:
-        raise ValueError("该笔交易已对账入账，不能修改；请先在对账页撤销匹配")
+        if locked_idx:
+            raise ValueError("该流水已有交易对账或流水入账，不能增删交易行（会打乱行号、破坏已确认对应或重复入账）；"
+                             "请先在对账页撤销匹配 / 在「已过账分录」红冲相关流水入账")
+    elif index in locked_idx:
+        raise ValueError("该笔交易已对账或已流水入账，不能修改；请先撤销匹配 / 红冲流水入账")
     txns = list(inv.transactions)
     if field == "__add__":
         txns.append(Transaction())
@@ -986,8 +993,12 @@ def line_reconcile(li) -> dict:
     """该行勾稽状态：有子明细时返回 {has_detail, matched, sub_sum, line_amount, parse_ok}。"""
     if not (li.sub_items or []):
         return {"has_detail": False}
+    from extraction.parse import amount as amt
     ssum, ok = _sub_sum(li)
-    matched = bool(ok and li.amount is not None and abs(ssum - li.amount) <= Decimal("0.01"))
+    # L1:容差按金额小数位收紧(3 位小数币种→0.001),不再一律 0.01(隐含 2 位、对海湾币种偏松)
+    _dp = max(2, amt.decimal_places(str(li.amount)) or 2) if li.amount is not None else 2
+    _tol = min(Decimal("0.01"), Decimal(10) ** (-_dp))
+    matched = bool(ok and li.amount is not None and abs(ssum - li.amount) <= _tol)
     return {"has_detail": True, "matched": matched, "parse_ok": ok,
             "sub_sum": str(ssum), "line_amount": _s(li.amount)}
 

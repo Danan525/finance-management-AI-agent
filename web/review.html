@@ -43,14 +43,28 @@
   table.txn th{background:#eef2f7;padding:6px 8px;text-align:left;border-bottom:1px solid #ddd;font-size:12px}
   table.txn td{padding:5px 8px;border-bottom:1px solid #eee}
   table.txn td.num{text-align:right;white-space:nowrap}
-  /* 摘要列(2)占满剩余宽度，其余列收窄 → 摘要文本换行少、不挤成很多行 */
-  table.txn{table-layout:fixed}
-  table.txn th:nth-child(1),table.txn td:nth-child(1){width:96px}
+  /* 摘要列(2)占满剩余宽度，其余列收窄 → 摘要够宽、按词换行可读（像发票明细描述）。
+     字段栏窄时整表 min-width 触发横向滚动，摘要仍保持宽度、不再被挤成一字一行。 */
+  .txnwrap{overflow-x:auto}
+  table.txn{table-layout:fixed;min-width:580px}
+  table.txn th:nth-child(1),table.txn td:nth-child(1){width:88px}
   table.txn th:nth-child(3),table.txn td:nth-child(3),
-  table.txn th:nth-child(4),table.txn td:nth-child(4){width:82px}
-  table.txn th:nth-child(5),table.txn td:nth-child(5){width:86px}
-  table.txn th:nth-child(6),table.txn td:nth-child(6){width:34px}
-  table.txn td:nth-child(2){white-space:normal}   /* 摘要：占剩余、可换行 */
+  table.txn th:nth-child(4),table.txn td:nth-child(4){width:68px}
+  table.txn th:nth-child(5),table.txn td:nth-child(5){width:74px}
+  table.txn th:nth-child(6),table.txn td:nth-child(6){width:62px;white-space:nowrap}
+  .limatch{cursor:pointer;border:1px solid #cfd8e6;background:#fff;border-radius:4px;padding:1px 4px;font-size:13px}
+  .limatch:hover{background:#eef4fb}
+  /* 交易行内手工匹配发票 picker（整行展开） */
+  tr.tmpickrow td{background:#fbfcfe;padding:0}
+  .tmpick{padding:10px 12px}
+  .tmpick .mpsearch{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .tmpick .mpsearch input{flex:1;min-width:0;padding:6px 8px;border:1px solid #cfd8e6;border-radius:6px;font-size:13px}
+  .tmpick .mplist{max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+  .tmpick .mrow{display:flex;align-items:center;gap:10px;padding:7px 9px;border:1px solid #e2e6ec;border-radius:8px;background:#fff}
+  .tmpick .mrow .minfo{flex:1;min-width:0;font-size:13px}
+  .tmpick .mrow button[disabled]{opacity:.45;cursor:not-allowed}
+  table.txn td:nth-child(2){white-space:normal;min-width:200px}   /* 摘要：占剩余、够宽、按词换行 */
+  table.txn .li-in{width:100%;box-sizing:border-box}              /* 数值/日期输入随列宽，不再固定像素撑破窄列 */
   table.txn .inc{color:#137333}
   table.txn .exp{color:#c0392b}
   .qitem{padding:9px 12px;border-bottom:1px solid #eee;cursor:pointer;text-align:left}
@@ -259,14 +273,6 @@
       <h1>人工审核</h1>
       <p>左为原件、右为提取字段；点字段↔点原件框双向定位（不自动入账）</p>
     </div>
-    <nav class="hnav">
-      <a href="/" class="navbtn">← 回到提取上传</a>
-      <a href="/reconcile" class="navbtn">🔗 对账确认</a>
-      <a href="/ledger" class="navbtn">📒 总账</a>
-      <a href="/reports" class="navbtn">📊 财务报表</a>
-      <a href="/learned" class="navbtn">🧠 已学规则</a>
-      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
-    </nav>
   </div>
   <div class="htools">
     <span class="dtoggle"><button id="rt-invoice" class="dtbtn on" onclick="setReviewType('invoice')">📄 审核发票</button><button id="rt-statement" class="dtbtn" onclick="setReviewType('statement')">🏦 审核流水</button></span>
@@ -883,13 +889,13 @@ function renderStatementDetail(d){
     const noinv=t.settled==='no_invoice';
     const last = ro
       ? `<span class="recbadge${noinv?' rec-noinv':''}" title="${noinv?'已确认无需发票·锁定；可在对账页「已确认」里撤销':'已对账入账·锁定；如需改先在对账页撤销匹配'}">${noinv?'🔒无需发票':'🔒已对账'}</span>`
-      : `<button class="lidel" title="删除此笔" onclick="event.stopPropagation();delTxn(${i})">🗑</button>`;
+      : `<button class="limatch" title="手工匹配对应发票" onclick="event.stopPropagation();openTxnMatch(${i})">🔗</button><button class="lidel" title="删除此笔" onclick="event.stopPropagation();delTxn(${i})">🗑</button>`;
     return `<tr class="txnrow${t.bbox?' located':''}${ro?(noinv?' txnnoinv':' txnrec'):''}" data-txn="${i}" onclick="txnRowClick(${i})">
-    <td><input class="li-in" style="width:88px" value="${esc(t.date||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'date',this.value)"></td>
+    <td><input class="li-in" value="${esc(t.date||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'date',this.value)"></td>
     <td><textarea class="li-ta" rows="1" ${dis} onclick="event.stopPropagation()" oninput="autoGrow(this)" onchange="saveTxn(${i},'description',this.value)">${esc(t.description||'')}</textarea></td>
-    <td class="num"><input class="li-in num inc" style="width:74px" value="${esc(t.income||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'income',this.value)"></td>
-    <td class="num"><input class="li-in num exp" style="width:74px" value="${esc(t.expense||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'expense',this.value)"></td>
-    <td class="num"><input class="li-in num" style="width:78px" value="${esc(t.balance||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'balance',this.value)"></td>
+    <td class="num"><input class="li-in num inc" value="${esc(t.income||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'income',this.value)"></td>
+    <td class="num"><input class="li-in num exp" value="${esc(t.expense||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'expense',this.value)"></td>
+    <td class="num"><input class="li-in num" value="${esc(t.balance||'')}" ${dis} onclick="event.stopPropagation()" onchange="saveTxn(${i},'balance',this.value)"></td>
     <td>${last}</td></tr>`;}).join('');
   const issues=(d.issues||[]).map(i=>`<li class="${esc(i.severity)}">${esc(i.code)}: ${esc(i.message)}</li>`).join('');
   const changes=(d.changes||[]).map(c=>`<li>${esc(c.field)}: <s>${esc(c.old_value)}</s> → ${esc(c.new_value)} <small>(${esc(c.changed_by)})</small></li>`).join('');
@@ -908,8 +914,8 @@ function renderStatementDetail(d){
         <h4>账户信息（改动即留痕）</h4>
         <table>${fields}</table>
         <h4>交易明细（${txns.length} 笔${recN?` · <span style="color:#137333">已处理 ${recN}/${txns.length}</span>`:''} · 可逐行核对/修改）</h4>
-        <table class="txn"><thead><tr><th>日期</th><th>摘要</th><th>收入</th><th>支出</th><th>余额</th><th></th></tr></thead>
-          <tbody>${rows||'<tr><td colspan="6" class="muted">未识别到交易，请对照左侧原件人工补录</td></tr>'}</tbody></table>
+        <div class="txnwrap"><table class="txn"><thead><tr><th>日期</th><th>摘要</th><th>收入</th><th>支出</th><th>余额</th><th></th></tr></thead>
+          <tbody>${rows||'<tr><td colspan="6" class="muted">未识别到交易，请对照左侧原件人工补录</td></tr>'}</tbody></table></div>
         ${anyRec?'<div class="muted" style="font-size:12px">🔒 已有交易对账入账，不能增删交易行（会打乱行号）；如需改请先在对账页撤销匹配。</div>':'<button class="liadd" onclick="addTxn()">+ 新增交易行</button>'}
         ${issues?`<h4>校验问题 <small class="muted2">（顶部红框列的才是"必须修正才能参与对账匹配"的；其余为一般提示，不阻断匹配）</small></h4><ul>${issues}</ul>`:''}
         ${changes?`<h4>修改轨迹</h4><ul class="chg">${changes}</ul>`:''}
@@ -968,6 +974,52 @@ async function saveTxn(ix, field, value){
 }
 async function addTxn(){ if(cur) await saveTxn(-1,'__add__',''); }
 async function delTxn(ix){ if(cur) await saveTxn(ix,'__del__',''); }
+
+// ---- 交易行内手工匹配对应发票（复用对账的 manual-candidates / manual-match）----
+function openTxnMatch(ix){
+  const tr=document.querySelector(`tr.txnrow[data-txn="${ix}"]`); if(!tr) return;
+  const exist=document.getElementById('tmpick-'+ix);
+  if(exist){ exist.remove(); return; }                       // 再点收起
+  const row=document.createElement('tr');
+  row.id='tmpick-'+ix; row.className='tmpickrow';
+  row.innerHTML=`<td colspan="6"><div class="tmpick" id="tmp-${ix}"><div class="muted">加载候选发票…</div></div></td>`;
+  tr.after(row);
+  loadTxnMatch(ix,'');
+}
+async function loadTxnMatch(ix,q){
+  const box=document.getElementById('tmp-'+ix); if(!box||!cur) return;
+  const B=(window.APP_BASE||'');
+  box.innerHTML='<div class="muted">加载候选发票…</div>';
+  let d={}; try{ d=await (await fetch(`${B}/api/reconcile/manual-candidates?stmt_hash=${encodeURIComponent(cur.file_hash)}&index=${ix}&q=${encodeURIComponent(q||'')}`)).json(); }catch(e){}
+  const list=(d.candidates||[]).map(c=>{
+    const warn=c.reconciled_elsewhere?' <span style="color:#c02626">（已在别处对账）</span>'
+             :(!c.approved?' <span style="color:#b5610a">（未审核·选后先审核）</span>':'');
+    const tag=c.group==='unmatched'?'<span class="tag" style="background:#eef1f7;color:#3a4a63;padding:1px 6px;border-radius:8px;font-size:11px">未匹配</span> ':'';
+    return `<div class="mrow"><div class="minfo">${tag}<b>${esc(c.invoice_no||'（无票号）')}</b>${warn}
+        <br><small class="muted">${esc(c.issuer||'')} · ${esc(c.date||'')} · ${esc(c.currency||'')} ${esc(c.total_due||'')}</small></div>
+      <button class="approve" ${c.reconciled_elsewhere?'disabled':''} onclick="doTxnMatch(${ix},'${esc(c.file_hash)}')">选此发票</button></div>`;
+  }).join('') || '<div class="muted" style="padding:6px">没有候选发票。用上方搜索发票号/供应商/金额查全部。</div>';
+  box.innerHTML=`<div class="mpsearch"><input id="tmq-${ix}" placeholder="搜发票号/供应商/金额" value="${esc(q||'')}"
+        onkeydown="if(event.key==='Enter')loadTxnMatch(${ix},this.value)">
+      <button onclick="loadTxnMatch(${ix},document.getElementById('tmq-${ix}').value)">🔍 搜索全部</button>
+      <button onclick="document.getElementById('tmpick-${ix}').remove()">关闭</button>
+      ${d.truncated?`<span class="muted" style="font-size:12px">仅显示前 ${(d.candidates||[]).length} 条，请搜索缩小</span>`:''}</div>
+    <div class="mplist">${list}</div>`;
+}
+async function doTxnMatch(ix, invHash){
+  if(!cur) return;
+  const r=await postJSON('/api/reconcile/manual-match', {stmt_hash:cur.file_hash, index:ix, invoice_hash:invHash});
+  if(!r) return;
+  if(r.needs_invoice_review){
+    if(confirm('该发票「'+(r.invoice_no||'')+'」还没审核通过（应计）。匹配已建立；点确定去审核该发票通过，之后到对账页「待确认」里确认这笔对账。')){
+      window.location=(window.APP_BASE||'')+'/review?hash='+encodeURIComponent(r.invoice_hash);
+    }
+    return;
+  }
+  if(r.blocked){ alert('⛔ '+(r.message||'不能重复对应')); return; }
+  if(r.ok){ selectRecord(cur.file_hash); }                    // 刷新：该笔变🔒已对账
+  else { alert(r.message||'匹配失败'); }
+}
 
 // 左侧原件可填字段清单（框选内容→填入）
 const FILLABLE=[['invoice_no','发票号'],['invoice_date','发票日期'],['payment_due_date','到期日'],
@@ -1661,12 +1713,16 @@ document.getElementById('filter').addEventListener('change', loadQueue);
     return;
   }
   const urlH = params.get('hash');
-  if(urlH){                                            // 深链最优先（比对/重复跳转、上传页「→人工录入」、流水卡片，会自动对齐类型）
+  if(urlH){                                            // 深链最优先（比对/重复跳转、上传页「→人工录入」、流水/余额调节卡片，会自动对齐类型）
     const ok = await selectRecord(urlH);
     const urlTxn = params.get('txn');                  // 上传页「最近识别的流水交易」卡片带来的交易下标 → 定位并闪动该行
     if(ok && urlTxn!=null && urlTxn!==''){
       const ti = parseInt(urlTxn, 10);
       if(!isNaN(ti)) setTimeout(()=>{ try{ focusTxn(ti); }catch(e){} }, 250);   // 待详情渲染/图片布局稳定后再定位
+    }
+    const urlField = params.get('field');              // 余额调节「未命名账户」等跳来：定位并聚焦该表头字段（如 bank_name 开户行）
+    if(ok && urlField){
+      setTimeout(()=>{ try{ focusField(urlField); }catch(e){} }, 250);
     }
     return;
   }

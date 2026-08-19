@@ -13,10 +13,12 @@ IS_LINES = [
     ("GrossProfit", "毛利 Gross Profit", "subtotal"),          # Revenue - COGS
     ("Opex", "营业费用 Operating Expenses", "detail"),
     ("FinanceCosts", "财务费用 Finance Costs", "detail"),
-    ("NetIncome", "净利润 Net Income", "total"),                # Revenue - 全部费用
+    ("OtherIncome", "其它收益 Other Income", "detail"),         # 利息/营业外收入等,加回净利
+    ("IncomeTax", "所得税费用 Income Tax", "detail"),           # 减去
+    ("NetIncome", "净利润 Net Income", "total"),                # 收入+其它收益 − 成本 − 费用 − 财务费 − 所得税
 ]
 IS_REVENUE = {"Revenue"}
-IS_EXPENSE = {"COGS", "Opex", "FinanceCosts"}
+IS_EXPENSE = {"COGS", "Opex", "FinanceCosts", "IncomeTax"}
 
 # ---- 资产负债表：分三段，明细行对应 BalanceSheet:<Line> ----
 BS_ASSETS = [

@@ -25,6 +25,11 @@ class JournalLine:
         # 容错：传入 str/float/int 统一转 Decimal（避免 float 误差）
         self.debit = _dec(self.debit)
         self.credit = _dec(self.credit)
+        # 科目名按编码规范化：科目字符串同时是账簿的**余额键**，若不统一，手填的
+        # "1002银行存款" / "2100 应付账款" 会各自成为独立的"影子科目"——试算平衡多一行，
+        # 现金与往来控制账户口径各算一半（现金流量表漏计而 E1/E3 假通过）。表外编码原样保留。
+        from . import accounts as _A          # 局部导入：accounts 不依赖 engine，避免循环
+        self.account = _A.canonical_account(self.account)
 
 
 @dataclass
@@ -56,6 +61,11 @@ class JournalEntry:
         return sum((l.debit - l.credit for l in self.lines if _A.is_cash(l.account)), ZERO)
 
     def assert_balanced(self) -> None:
+        # 单行负数护栏下沉到内核（不止 post_manual_entry）：任一行借或贷为负都拒绝，
+        # 防"借200/借-100/贷100"这类恒平却含诡异负余额的分录从任何路径混入。
+        for l in self.lines:
+            if l.debit < ZERO or l.credit < ZERO:
+                raise ValueError(f"分录行金额为负，拒绝过账：{self.memo} 科目={l.account}")
         dr, cr = self.totals()
         if dr != cr:
             raise ValueError(f"借贷不平，拒绝过账：{self.memo} 借={dr} 贷={cr}（差额 {dr - cr}）")

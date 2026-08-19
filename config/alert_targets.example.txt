@@ -1,0 +1,11 @@
+# 汇率拉取失败告警目标。复制为 config/alert_targets.txt 并填入你的 Lark webhook。
+# 本文件含密钥，已 gitignore、不入库。token 获取见 ~/APPRISE_GUIDE.md「Lark 配置」。
+#
+# 【多人同时收到】每行一个目标，失败时全部推送：
+#   · 一个群多人：把机器人加进含所有相关人的 Lark 群，填该群 webhook（一行即可，群里人人收到）
+#   · 多个群：每群一行，全部同时收到
+# 格式二选一（等价）：lark://<32位token>  或  https://open.larksuite.com/open-apis/bot/v2/hook/<32位token>
+#
+# 示例（去掉行首 # 生效）：
+# lark://财务群的32位token
+# lark://运维群的32位token

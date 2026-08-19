@@ -36,11 +36,6 @@
 <header>
   <div class="hbar">
     <div class="htitle"><h1>📊 财务报表</h1><p>从总账取数自动生成 · 勾稽通过才出表（IFRS · USD · 单期）</p></div>
-    <nav class="hnav">
-      <a href="/" class="navbtn">← 提取上传</a>
-      <a href="/ledger" class="navbtn">📒 总账</a>
-      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
-    </nav>
   </div>
   <div id="basis">加载中…</div>
 </header>
@@ -62,11 +57,13 @@ async function doExport(){
   if(r&&r.download){ window.location.href = r.download; }
 }
 function checkBar(ck){
-  if(ck.can_issue) return `<div class="checkbar ck-ok" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span>✓ 勾稽通过：资产=负债+权益、现金流量表期末现金=货币资金、科目归类完整——可出表</span><button onclick="doExport()" style="background:#137333;color:#fff;border:0;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">⬇ 导出 Excel</button></div>`;
+  if(ck.can_issue) return `<div class="checkbar ck-ok" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span>✓ 勾稽通过：资产=负债+权益、期末现金=货币资金、经营现金流直接法=间接法、科目归类完整——可出表</span><button onclick="doExport()" style="background:#137333;color:#fff;border:0;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:700;font-size:13px">⬇ 导出 Excel</button></div>`;
   let items = '';
-  const e1=ck.E1_balance_sheet_balanced, e3=ck.E3_cash_tie, e6=ck.E6_all_classified;
+  const e1=ck.E1_balance_sheet_balanced, e2=ck.E2_income_to_retained, e3=ck.E3_cash_tie, e4=ck.E4_cfo_direct_indirect, e6=ck.E6_all_classified;
   if(!e1.ok) items += `<li>E1 资产负债表不平衡，差额 ${esc(e1.diff)}</li>`;
+  if(e2&&!e2.ok) items += `<li>E2 净利润 ≠ 未结转损益+已结转入留存，差额 ${esc(e2.diff)}</li>`;
   if(e3&&!e3.ok) items += `<li>E3 现金流量表期末现金 ≠ 资产负债表货币资金，差额 ${esc(e3.diff)}</li>`;
+  if(e4&&!e4.ok) items += `<li>E4 经营现金流：直接法 ≠ 间接法，差额 ${esc(e4.diff)}（多为现金活动分类错、或非经营项误置进经营性流动资产/负债）</li>`;
   if(!e6.ok) items += `<li>E6 有未归类科目：${(e6.unclassified||[]).map(esc).join('、')}（请在科目表补映射）</li>`;
   return `<div class="checkbar ck-bad">✗ 勾稽未通过，暂不出表（下方为草稿，仅供定位）：<ul>${items}</ul></div>`;
 }
@@ -78,6 +75,16 @@ function cfTable(cf){
   r += `<tr class="grand"><td>期末现金 Ending Cash</td><td class="num">${num(cf.ending)}</td></tr>`;
   const tie = cf.e3_ok?'✓ 与货币资金勾稽':`✗ 与货币资金差 ${esc(cf.e3_diff)}`;
   return `<div class="rpt"><h2>现金流量表 Cash Flow（直接法）　<span style="font-size:12px;font-weight:400">${tie}</span></h2><table>${r}</table></div>`;
+}
+function cfIndirectTable(ind){
+  const wc = ind.working_capital||{};
+  let r = `<tr><td style="padding-left:28px">本期经营净利润 Net Income</td><td class="num">${num(ind.net_income)}</td></tr>`;
+  r += `<tr><td style="padding-left:28px">加：折旧摊销（非现金）Depreciation & Amortization</td><td class="num">${num(ind.depreciation_addback)}</td></tr>`;
+  r += `<tr><td style="padding-left:28px">减：经营性流动资产增加 ↑ Operating Assets</td><td class="num">${num('-'+(wc.op_assets_increase||'0'))}</td></tr>`;
+  r += `<tr><td style="padding-left:28px">加：经营性流动负债增加 ↑ Operating Liabilities</td><td class="num">${num(wc.op_liab_increase)}</td></tr>`;
+  r += `<tr class="grand"><td>经营活动现金流（间接法）CFO Indirect</td><td class="num">${num(ind.operating)}</td></tr>`;
+  const tie = ind.e4_ok?`✓ 与直接法一致（${num(ind.direct_operating)}）`:`✗ 与直接法差 ${esc(ind.e4_diff)}`;
+  return `<div class="rpt"><h2>经营现金流·间接法 CFO Indirect（交叉验证 E4）　<span style="font-size:12px;font-weight:400">${tie}</span></h2><table>${r}</table></div>`;
 }
 function isTable(is){
   let r='';
@@ -110,7 +117,8 @@ function bsTable(bs){
   if(!d.checks){ document.getElementById('body').innerHTML='<div class="empty">暂无数据。先在「总账」入账并结算。</div>'; return; }
   document.getElementById('body').innerHTML =
     checkBar(d.checks) + isTable(d.income_statement) + bsTable(d.balance_sheet)
-    + (d.cash_flow_statement?cfTable(d.cash_flow_statement):'');
+    + (d.cash_flow_statement?cfTable(d.cash_flow_statement):'')
+    + (d.cash_flow_indirect?cfIndirectTable(d.cash_flow_indirect):'');
 })();
 </script>
 </body>

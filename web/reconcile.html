@@ -77,20 +77,21 @@
   .cmplegend{font-size:12px;color:#546174;margin:0 0 10px}
   .cmplegend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin:0 4px 0 12px;vertical-align:middle}
   .loading{padding:16px;color:#8a95a3;font-size:13px}
+  /* 手工匹配发票 picker */
+  .manualpick{border-top:1px solid #eef1f5;background:#fbfcfe;padding:10px 14px}
+  .mpsearch{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .mpsearch input{flex:1;min-width:0;padding:6px 8px;border:1px solid #cfd8e6;border-radius:6px;font-size:13px}
+  .mplist{max-height:280px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+  .mrow{display:flex;align-items:center;gap:10px;padding:7px 9px;border:1px solid #e2e6ec;border-radius:8px;background:#fff}
+  .mrow .minfo{flex:1;min-width:0;font-size:13px}
+  .mrow button{white-space:nowrap}
+  .mrow button[disabled]{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
 <header>
   <div class="hbar">
     <div class="htitle"><h1>🔗 对账确认</h1><p>自动匹配为主、人工处理例外：高可信唯一可一键批量通过，异常逐项确认</p></div>
-    <nav class="hnav">
-      <a href="/" class="navbtn">← 提取上传</a>
-      <a href="/review" class="navbtn">📝 提取纠错/审核</a>
-      <a href="/ledger" class="navbtn">📒 总账</a>
-      <a href="/reports" class="navbtn">📊 财务报表</a>
-      <a href="/learned" class="navbtn">🧠 已学规则</a>
-      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
-    </nav>
   </div>
   <div class="htools">
     <button class="runbtn" onclick="runMatch()">▶ 运行自动匹配</button>
@@ -294,8 +295,13 @@ function card(m, actionable){
   }else if(m.category==='no_match_needed'){   // 无需匹配(待核) → 确认无需发票
     act = `<div class="cact"><span class="muted" style="margin-right:auto">系统判为无需发票，请人工核对</span>
              <button class="ok" onclick="ackOne(${m.id})">✓ 确认无需发票</button></div>`;
-  }else{                             // 其它单边：未匹配（待补对应发票/流水）
-    act = `<div class="cact"><span class="muted">${(m.invoices||[]).length?'待补对应流水':'待补对应发票'}</span></div>`;
+  }else if((m.txns||[]).length && !(m.invoices||[]).length){   // 只有流水、没发票 → 可手工指定发票匹配
+    const t=m.txns[0];
+    act = `<div class="cact"><span class="muted" style="margin-right:auto">未找到对应发票</span>
+      <button class="ok" onclick="openManual(${m.id},'${esc(t.stmt_hash)}',${t.index})" title="手工从发票里选一张与这笔流水配对">🔗 手工匹配发票</button></div>
+      <div class="manualpick" id="mp-${m.id}" style="display:none"></div>`;
+  }else{                             // 其它单边：未匹配（发票没对应流水）
+    act = `<div class="cact"><span class="muted">待补对应流水</span></div>`;
   }
   const exp = hasBoth ? `<button class="expander" onclick="toggleDetail(${m.id})" id="exp-${m.id}">🔍 展开对照</button>` : '';
   return `<div class="card" data-mid="${m.id}"><div class="chead">
@@ -356,6 +362,46 @@ async function ackOne(id){
 async function unackOne(id){
   await fetch('/api/reconcile/unack-no-match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({match_id:id})});
   await loadSummary(); await loadMatches();
+}
+// ---- 手工匹配发票（给未自动配上的流水）----
+function openManual(mid, sh, idx){
+  const box=document.getElementById('mp-'+mid); if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; return; }
+  box.style.display='block'; box.dataset.sh=sh; box.dataset.idx=idx;
+  loadManual(mid, '');
+}
+async function loadManual(mid, q){
+  const box=document.getElementById('mp-'+mid); if(!box) return;
+  const sh=box.dataset.sh, idx=box.dataset.idx;
+  box.innerHTML='<div class="loading">加载候选发票…</div>';
+  let d={}; try{ d=await (await fetch(`${B}/api/reconcile/manual-candidates?stmt_hash=${encodeURIComponent(sh)}&index=${idx}&q=${encodeURIComponent(q||'')}`)).json(); }catch(e){}
+  const list=(d.candidates||[]).map(c=>{
+    const warn=c.reconciled_elsewhere?' <span style="color:#c02626">（已在别处对账）</span>'
+             :(!c.approved?' <span style="color:#b5610a">（未审核·选后先去审核）</span>':'');
+    const tag=c.group==='unmatched'?'<span class="badge b-none">未匹配</span> ':'';
+    return `<div class="mrow"><div class="minfo">${tag}<b>${esc(c.invoice_no||'（无票号）')}</b>${warn}
+        <br><small class="muted">${esc(c.issuer||'')} · ${esc(c.date||'')} · ${esc(c.currency||'')} ${esc(c.total_due||'')}</small></div>
+      <button class="ok" ${c.reconciled_elsewhere?'disabled':''} onclick="doManual(${mid},'${esc(c.file_hash)}')">选此发票</button></div>`;
+  }).join('') || '<div class="muted" style="padding:6px">没有候选发票。用上方搜索发票号/供应商/金额查全部。</div>';
+  box.innerHTML=`<div class="mpsearch"><input id="mpq-${mid}" placeholder="搜发票号/供应商/金额" value="${esc(q||'')}"
+        onkeydown="if(event.key==='Enter')loadManual(${mid},this.value)">
+      <button onclick="loadManual(${mid},document.getElementById('mpq-${mid}').value)">🔍 搜索全部</button>
+      ${d.truncated?`<span class="muted" style="font-size:12px">仅显示前 ${(d.candidates||[]).length} 条，请搜索缩小</span>`:''}</div>
+    <div class="mplist">${list}</div>`;
+}
+async function doManual(mid, invHash){
+  const box=document.getElementById('mp-'+mid); if(!box) return;
+  const r=await postJSON('/api/reconcile/manual-match', {stmt_hash:box.dataset.sh, index:parseInt(box.dataset.idx,10), invoice_hash:invHash});
+  if(!r) return;
+  if(r.needs_invoice_review){
+    try{ localStorage.setItem('reconcile:lastCat', CUR); }catch(e){}
+    alert('该发票「'+(r.invoice_no||'')+'」还没审核确认（应计）。先去审核通过，通过后回来即完成这笔对账。');
+    window.location=(window.APP_BASE||'')+'/review?hash='+encodeURIComponent(r.invoice_hash)+'&back=reconcile';
+    return;
+  }
+  if(r.blocked){ alert('⛔ '+(r.message||'不能重复对应')); await loadSummary(); await loadMatches(); return; }
+  if(r.ok){ await loadSummary(); await loadMatches(); }
+  else { alert(r.message||'匹配失败'); }
 }
 async function unrejectOne(id){
   if(!confirm('撤销这条「不成立」？撤销后这一对会重新参与自动匹配。')) return;

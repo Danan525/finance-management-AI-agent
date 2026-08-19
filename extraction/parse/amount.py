@@ -124,6 +124,24 @@ def decimal_places(raw: Optional[str]) -> Optional[int]:
     return len(core.split(".")[-1])
 
 
+# 币种最小单位小数位（默认 2；0 位=JPY/KRW 等无分币，3 位=海湾 BHD/KWD/OMR 等）
+_CCY_DECIMALS = {"JPY": 0, "KRW": 0, "VND": 0, "CLP": 0, "ISK": 0, "XOF": 0, "XAF": 0,
+                 "BHD": 3, "KWD": 3, "OMR": 3, "IQD": 3, "JOD": 3, "TND": 3, "LYD": 3}
+
+
+def currency_decimals(ccy: Optional[str]) -> int:
+    return _CCY_DECIMALS.get((ccy or "").strip().upper(), 2)
+
+
+def match_tolerance(ccy: Optional[str] = None) -> Decimal:
+    """金额"完全一致"的容差,按币种最小单位定:**最松不超过 0.01**,对 3 位小数币种收紧到 0.001。
+
+    修 L1:此前硬编码 0.01 隐含"2 位小数",对 BHD/KWD/OMR(3 位)偏松(0.01=10 个最小单位),
+    会把 0.001–0.009 的真实差额当"完全一致"放行。取 min(0.01, 10^-max(2,小数位)) 只收紧、不放松。"""
+    dp = currency_decimals(ccy)
+    return min(Decimal("0.01"), Decimal(10) ** (-max(2, dp)))
+
+
 def normalize_for_match(raw: Optional[str]) -> str:
     """规整金额文本用于双引擎字符串匹配：去掉币种符号/千分位/空格/括号。"""
     if not raw:

@@ -120,6 +120,31 @@ CREATE TABLE IF NOT EXISTS reconciled_members (
     at         TEXT
 );
 
+-- 交易对手方主数据（人工建档；供应商/客户）。norm=归一化键，防 ACME / ACME Inc 重复建档。
+CREATE TABLE IF NOT EXISTS counterparties (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT UNIQUE,      -- 规范名（人工确认的正式写法）
+    norm            TEXT,             -- 归一化键（去大小写/标点/公司后缀）
+    kind            TEXT,             -- vendor / customer / both
+    tax_id          TEXT,
+    default_account TEXT,             -- 默认对方科目（可空；仅建议，不自动套用）
+    note            TEXT,
+    status          TEXT,             -- active / archived
+    created_by      TEXT,
+    created_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cp_norm ON counterparties(norm);
+
+-- 对手方别名：发票上出现的各种写法 → 主数据（人工确认归并的结果）
+CREATE TABLE IF NOT EXISTS counterparty_aliases (
+    norm            TEXT PRIMARY KEY, -- 归一化写法（唯一：一种写法只能归属一个对手方）
+    raw             TEXT,             -- 原始写法（发票上所见）
+    cp_id           INTEGER,
+    created_by      TEXT,
+    created_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cpa_cp ON counterparty_aliases(cp_id);
+
 -- 总账：会计分录头。金额一律 TEXT 存 Decimal 原文（绝不 float）。
 CREATE TABLE IF NOT EXISTS journal_entries (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,6 +161,7 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     reverses_id   INTEGER,           -- 红冲指向的原分录 id（普通分录为 NULL）
     settle_amount TEXT,              -- 结算分录：本次清账的票面额（明细辅助账用；非结算为 NULL）
     activity      TEXT,              -- 现金流活动类别 operating/investing/financing（动现金的分录必填；否则 NULL）
+    counterparty  TEXT,              -- 对手方（非引擎来源动往来控制账户必填；往来明细归属用）
     created_by    TEXT,
     created_at    TEXT,
     posted_by     TEXT,
@@ -144,6 +170,15 @@ CREATE TABLE IF NOT EXISTS journal_entries (
 CREATE INDEX IF NOT EXISTS idx_je_source ON journal_entries(source_kind, source_hash);
 CREATE INDEX IF NOT EXISTS idx_je_status ON journal_entries(status);
 CREATE INDEX IF NOT EXISTS idx_je_period ON journal_entries(period);
+
+-- 总账：会计期间软关账状态（关账后拒绝新分录，重开才可再动）。
+CREATE TABLE IF NOT EXISTS periods (
+    period        TEXT PRIMARY KEY,  -- YYYY-MM
+    status        TEXT,              -- open / closed
+    net_income    TEXT,              -- 关账时结转的本期净利润（审计）
+    closed_by     TEXT,
+    closed_at     TEXT
+);
 
 -- 总账：分录行（借/贷其一为正）。
 CREATE TABLE IF NOT EXISTS journal_lines (
@@ -223,6 +258,8 @@ def init_db() -> None:
                 conn.execute("ALTER TABLE journal_entries ADD COLUMN settle_amount TEXT")
             if "activity" not in jcols:
                 conn.execute("ALTER TABLE journal_entries ADD COLUMN activity TEXT")
+            if "counterparty" not in jcols:       # 往来控制账户软护栏引入（对手方归属）
+                conn.execute("ALTER TABLE journal_entries ADD COLUMN counterparty TEXT")
         except Exception:
             pass
         # 迁移：matches 增 reason（结构化未匹配/无需匹配原因）+ txn_type（交易类型）

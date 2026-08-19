@@ -47,12 +47,22 @@ class ReportsTest(unittest.TestCase):
         shutil.rmtree(self._dir, ignore_errors=True)
 
     def _opening_capital(self, amount):
-        # 期初实收资本：借 银行 / 贷 实收资本（动现金 → 标筹资活动）
+        # 本期股东出资：借 银行 / 贷 实收资本（动现金 → 筹资活动流入；source_kind='manual'，
+        # 非期初建账——建账另见 test_opening）。
         store.post_entry(JournalEntry(
-            "2026-06-01", "期初实收资本", [
+            "2026-06-01", "股东出资", [
                 JournalLine("1002 银行存款 Bank", debit=amount),
                 JournalLine("3000 实收资本 Share Capital", credit=amount)],
-            source_kind="opening"), by="t", at="2026-06-01T00:00:00Z", activity="financing")
+            source_kind="manual"), by="t", at="2026-06-01T00:00:00Z", activity="financing")
+
+    def test_basis_currency_follows_functional(self):
+        # 覆盖性验证发现：报表币种标签曾硬编码 USD；非 USD 功能货币主体标签应跟随
+        old = config.FUNCTIONAL_CURRENCY
+        try:
+            config.FUNCTIONAL_CURRENCY = "EUR"
+            self.assertEqual(reports.generate()["basis"]["currency"], "EUR")
+        finally:
+            config.FUNCTIONAL_CURRENCY = old
 
     def test_empty_reports_balance(self):
         r = reports.generate()
@@ -160,6 +170,32 @@ class ReportsTest(unittest.TestCase):
         self.assertFalse(ck["can_issue"])                      # 勾稽不过不出表
 
 
+    def test_expanded_chart_other_income_tax_and_contra_asset(self):
+        # 其它收益(利息)加回净利、所得税减去;累计折旧抵减固定资产(PPE)
+        self._opening_capital("10000.00")
+        ledger.post_manual_entry([{"account": "1500 固定资产 Fixed Assets", "debit": "3000"},
+                                  {"account": "1002 银行存款 Bank", "credit": "3000"}],
+                                 date="2026-06-02", memo="购设备", activity="investing")
+        ledger.post_manual_entry([{"account": "1002 银行存款 Bank", "debit": "50"},
+                                  {"account": "4100 利息收入 Interest Income", "credit": "50"}],
+                                 date="2026-06-05", memo="利息", activity="operating")
+        ledger.post_manual_entry([{"account": "6602 折旧摊销费 Depreciation & Amortization", "debit": "300"},
+                                  {"account": "1509 累计折旧 Accumulated Depreciation", "credit": "300"}],
+                                 date="2026-06-30", memo="折旧")
+        ledger.post_manual_entry([{"account": "6801 所得税费用 Income Tax Expense", "debit": "100"},
+                                  {"account": "2220 应交税费-应交所得税 Income Tax Payable", "credit": "100"}],
+                                 date="2026-06-30", memo="所得税")
+        istmt = {l["key"]: l["amount"] for l in reports.income_statement()["lines"]}
+        self.assertEqual(istmt["OtherIncome"], "50")
+        self.assertEqual(istmt["IncomeTax"], "100")
+        # 净利 = 其它收益50 - 折旧300 - 所得税100 = -350
+        self.assertEqual(istmt["NetIncome"], "-350")
+        bs = reports.balance_sheet()
+        ppe = [x["amount"] for x in bs["assets"] if x["key"] == "PPE"][0]
+        self.assertEqual(ppe, "2700")           # 固定资产3000 - 累计折旧300
+        self.assertTrue(bs["balanced"])
+        self.assertTrue(reports.checks()["can_issue"])
+
     def test_generate_is_json_serializable(self):
         # generate() 直接进 JSONResponse，必须无 Decimal 泄漏（曾致 /api/reports 500）
         import json
@@ -190,6 +226,80 @@ class ReportsTest(unittest.TestCase):
             source_kind="manual"), by="t", at="2026-06-01T00:00:00Z", activity="operating")
         with self.assertRaises(ValueError):
             reports.export_excel()
+
+
+class E4IndirectCashFlowTest(unittest.TestCase):
+    """间接法现金流 + E4（直接法 == 间接法）。综合场景含应计/结算/折旧/投资/筹资。"""
+
+    def setUp(self):
+        self._dir = Path(tempfile.mkdtemp())
+        self._db, self._up = config.DB_PATH, config.UPLOAD_DIR
+        config.DB_PATH = self._dir / "t.db"; config.UPLOAD_DIR = self._dir / "up"
+        config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        db._initialized = False; db.init_db()
+
+    def tearDown(self):
+        config.DB_PATH, config.UPLOAD_DIR = self._db, self._up
+        db._initialized = False
+        shutil.rmtree(self._dir, ignore_errors=True)
+
+    def _build(self):
+        L = JournalLine
+        # 筹资：股东注资 12000（现金+）
+        ledger.post_manual_entry([{"account": "1002 银行存款 Bank", "debit": "12000"},
+                                  {"account": "3000 实收资本 Share Capital", "credit": "12000"}],
+                                 date="2026-06-01", activity="financing")
+        # 投资：购固定资产 5000（现金−）
+        ledger.post_manual_entry([{"account": "1500 固定资产 Fixed Assets", "debit": "5000"},
+                                  {"account": "1002 银行存款 Bank", "credit": "5000"}],
+                                 date="2026-06-02", activity="investing")
+        # 应计：赊销收入 3000（不动现金，AR 控制账户）
+        ledger.post_manual_entry([{"account": "1100 应收账款 Accounts Receivable", "debit": "3000"},
+                                  {"account": "4000 主营业务收入 Revenue", "credit": "3000"}],
+                                 date="2026-06-03", allow_control=True, counterparty="客户X")
+        # 结算：收款 3000（现金+，经营）
+        ledger.post_manual_entry([{"account": "1002 银行存款 Bank", "debit": "3000"},
+                                  {"account": "1100 应收账款 Accounts Receivable", "credit": "3000"}],
+                                 date="2026-06-04", activity="operating",
+                                 allow_control=True, counterparty="客户X")
+        # 经营：付手续费 500（现金−）
+        ledger.post_manual_entry([{"account": "6603 财务费用-手续费 Bank/Platform Fees", "debit": "500"},
+                                  {"account": "1002 银行存款 Bank", "credit": "500"}],
+                                 date="2026-06-05", activity="operating")
+        # 折旧 800（非现金）
+        ledger.post_manual_entry([{"account": "6602 折旧摊销费 Depreciation & Amortization", "debit": "800"},
+                                  {"account": "1509 累计折旧 Accumulated Depreciation", "credit": "800"}],
+                                 date="2026-06-06")
+
+    def test_e4_ties_direct_and_indirect(self):
+        self._build()
+        ind = reports.cash_flow_indirect()
+        # 直接法经营 = 收款3000 − 手续费500 = 2500
+        self.assertEqual(D(ind["direct_operating"]), D("2500"))
+        # 间接法 = 净利1700 + 折旧800 − ΔAR0 = 2500
+        self.assertEqual(D(ind["net_income"]), D("1700"))
+        self.assertEqual(D(ind["depreciation_addback"]), D("800"))
+        self.assertEqual(D(ind["operating"]), D("2500"))
+        self.assertTrue(ind["e4_ok"])
+        ck = reports.checks()
+        self.assertTrue(ck["E4_cfo_direct_indirect"]["ok"])
+        self.assertTrue(ck["can_issue"])
+
+    def test_e4_excludes_non_operating_disposal_gain(self):
+        # 资产处置收益(标 investing)进净利，但对应现金在投资活动 → 间接法剔除非经营损益，E4 仍平。
+        # （覆盖性验证发现：此前 E4 对资产处置误报不平；剔除非经营损益 + 折旧取计提额 后恒等成立。）
+        self._build()
+        ledger.post_manual_entry([
+            {"account": "1002 银行存款 Bank", "debit": "1200"},
+            {"account": "1509 累计折旧 Accumulated Depreciation", "debit": "800"},
+            {"account": "1500 固定资产 Fixed Assets", "credit": "1800"},
+            {"account": "4200 营业外收入 Other Income", "credit": "200"}],
+            date="2026-06-08", activity="investing")
+        ind = reports.cash_flow_indirect()
+        self.assertEqual(D(ind["non_operating_pl_excluded"]), D("200"))   # 处置收益被剔除
+        self.assertEqual(D(ind["depreciation_addback"]), D("800"))        # 折旧取计提额，不被处置冲销抵消
+        self.assertTrue(ind["e4_ok"])                                     # 直接法 == 间接法仍成立
+        self.assertTrue(reports.checks()["can_issue"])
 
 
 if __name__ == "__main__":

@@ -20,9 +20,23 @@ PAGE_CACHE_DIR = DATA_ROOT / "cache" / "pages"
 # 分类规则可配置文件（科目表/关键词/供应商/固定资产阈值）——缺省或损坏则用代码内置默认，
 # 行为完全不变；用户改这一个 JSON 即可定制自己的科目表，无需改代码。见 config/classification.json。
 CLASSIFY_RULES_PATH = BASE_DIR / "config" / "classification.json"
+# 总账科目表可配置文件（编码/名称/类别/方向/报表行归属）——缺省/损坏则用内置默认，行为不变；
+# 用户改这一个 JSON 即可加/改科目与报表行,无需改代码(规则即数据,计划 §3.7)。见 config/chart_of_accounts.example.json。
+CHART_PATH = BASE_DIR / "config" / "chart_of_accounts.json"
+FX_RATES_PATH = BASE_DIR / "config" / "fx_rates.json"   # 外币→功能货币 汇率表（Frankfurter 按日拉取更新的本地缓存）
+FX_AUTO_FETCH = True               # 本地缺当日汇率时是否自动向 provider 拉一次（测试/离线可置 False）；只拉公开汇率、不发内部数据
+BUSINESS_TIMEZONE = "Asia/Shanghai"  # 业务日期/汇率调度统一按北京时间；审计时间戳仍存 UTC
+FX_UPDATE_STATE_PATH = DATA_ROOT / "fx-update-state.json"  # 去重：最后已推送的汇率有效日（运行时状态，不入 git）
+POSTING_ROLES_PATH = BASE_DIR / "config" / "posting_accounts.json"   # 关键过账科目角色（AP/AR/税/收入/银行/差额…）可配置覆盖
 
 for _d in (UPLOAD_DIR, EXPORT_DIR, DATA_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+# ---- 总账/记账口径 ------------------------------------------------------
+FUNCTIONAL_CURRENCY = "USD"        # 功能货币；MVP 单一币种,外币发票入账前须换算(否则拒绝,防静默当 USD)
+INPUT_TAX_DEDUCTIBLE = True        # 收票进项税默认可抵扣(VAT/GST 辖区);置 False=不可抵扣、税并入成本(美国销售税)
+                                   # 可按发票覆盖(post_invoice(tax_deductible=...))。计划 §3.2 保守默认为不可抵扣,
+                                   # 本工具面向多国(多数辖区可抵扣)故默认 True,US 等取消勾选或置 False。
 
 # ---- 数据安全 / 磁盘留存（运维加固）------------------------------------
 BACKUP_KEEP = 14             # 保留最近 N 份数据库快照（默认每日一份 → 约两周）

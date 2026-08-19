@@ -50,9 +50,24 @@ def _amounts(inv):
 
 
 def accrual_entry(inv, direction: Optional[str] = None,
-                  own_company: Optional[str] = None) -> JournalEntry:
-    """生成一张应计分录（Draft）。direction 未指定则推断。不落库、不过账。"""
+                  own_company: Optional[str] = None,
+                  tax_deductible: Optional[bool] = None) -> JournalEntry:
+    """生成一张应计分录（Draft）。direction 未指定则推断。不落库、不过账。
+
+    tax_deductible：收票(AP)进项税可抵扣性。None → 用 `config.INPUT_TAX_DEDUCTIBLE`。
+    - True（VAT/GST 辖区）：税记进项税(1180 资产)、费用记净额；
+    - False（美国销售税/不可抵扣）：**税并入成本**、费用记 净额+税，不生成进项税资产。
+    """
+    from core import config
     direction = direction or infer_direction(inv, own_company)
+    if tax_deductible is None:
+        tax_deductible = getattr(config, "INPUT_TAX_DEDUCTIBLE", True)
+    # M1:合计金额是入账权威额。total 缺失时 _amounts 会用 净额+税 兜底,但若只抓到拆分税的一档
+    # (如印度 CGST 有、SGST 缺),这个兜底会静默漏掉另一档。故要求 total_due 存在,由它反推税额。
+    if _dec(inv.f("total_due").value) <= ZERO:
+        raise ValueError(
+            "发票缺合计金额(total_due),无法确定入账额——请先补全总额再入账"
+            "(拆分税如 CGST+SGST 只抓到一档时,靠总额反推才不漏税)：%s" % (inv.f("invoice_no").value or ""))
     sub, tax, total = _amounts(inv)
     date = inv.f("invoice_date").value or inv.f("payment_due_date").value or ""
     no = inv.f("invoice_no").value or ""
@@ -60,9 +75,11 @@ def accrual_entry(inv, direction: Optional[str] = None,
              else inv.f("customer_name").value) or ""
 
     if direction == AP:
-        lines = [JournalLine(A.expense_account(inv), debit=sub, memo=party)]
-        if tax > ZERO:
-            lines.append(JournalLine(A.INPUT_TAX, debit=tax))
+        if tax > ZERO and tax_deductible:
+            lines = [JournalLine(A.expense_account(inv), debit=sub, memo=party),
+                     JournalLine(A.INPUT_TAX, debit=tax)]
+        else:                                   # 不可抵扣：税并入成本(费用=净额+税)
+            lines = [JournalLine(A.expense_account(inv), debit=sub + tax, memo=party)]
         lines.append(JournalLine(A.AP, credit=total, memo=party))
         memo = f"应计·应付 {no} {party}".strip()
     else:

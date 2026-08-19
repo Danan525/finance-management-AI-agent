@@ -69,16 +69,19 @@ def settlement_entry(direction: str, settle_amount: Decimal, cash_amount: Decima
 # ---------- 明细辅助账：单票未结额（不走控制账户总额）----------
 
 def _accrual(file_hash: str, conn) -> Optional[dict]:
-    """取该发票已过账的应计分录（含方向/全额）。已红冲/不存在则 None。"""
+    """取该来源已过账的可结算往来项（发票应计 或 期初往来）。已红冲/不存在/非往来则 None。"""
     row = conn.execute(
-        "SELECT * FROM journal_entries WHERE source_kind='invoice' AND source_hash=? "
+        "SELECT * FROM journal_entries WHERE source_kind IN ('invoice','opening') AND source_hash=? "
         "AND status='Posted' AND reverses_id IS NULL LIMIT 1", (file_hash,)).fetchone()
     if not row:
         return None
-    # 方向：应计分录里出现 AP 科目=应付，AR 科目=应收
+    # 方向：分录里出现 AP 科目=应付，AR 科目=应收
     accts = [r["account"] for r in conn.execute(
         "SELECT account FROM journal_lines WHERE entry_id=?", (row["id"],)).fetchall()]
-    direction = AP if A.AP in accts else (AR if A.AR in accts else AP)
+    sides = [A.control_side(a) for a in accts]          # 按编码判归属（容忍科目名写法差异）
+    if AP not in sides and AR not in sides:             # 期初非往来项（如银行/资本余额）不可结算
+        return None
+    direction = AP if AP in sides else AR
     # 业务性质科目（费用/收入/资产）：排除往来控制、税、现金科目
     nature = next((a for a in accts
                    if a not in (A.AP, A.AR, A.INPUT_TAX, A.OUTPUT_TAX) and not A.is_cash(a)), "")
@@ -130,47 +133,101 @@ def open_invoices(conn: Optional[sqlite3.Connection] = None) -> List[dict]:
     out = []
     with db._conn_or(conn) as c:
         rows = c.execute(
-            "SELECT source_hash, source_ref, entry_no, total_debit, id FROM journal_entries "
-            "WHERE source_kind='invoice' AND status='Posted' AND reverses_id IS NULL "
+            "SELECT source_hash, source_ref, entry_no, source_kind, total_debit, id FROM journal_entries "
+            "WHERE source_kind IN ('invoice','opening') AND status='Posted' AND reverses_id IS NULL "
             "ORDER BY period, entry_no").fetchall()
         for r in rows:
+            accts = [x["account"] for x in c.execute(
+                "SELECT account FROM journal_lines WHERE entry_id=?", (r["id"],)).fetchall()]
+            sides = [A.control_side(a) for a in accts]
+            if AP not in sides and AR not in sides:      # 期初非往来项(银行/资本…)不进待结算
+                continue
             fh = r["source_hash"]
             gross = _dec(r["total_debit"])
             settled = settled_amount(fh, c)
             open_amt = gross - settled
             if open_amt <= ZERO:
                 continue
-            accts = [x["account"] for x in c.execute(
-                "SELECT account FROM journal_lines WHERE entry_id=?", (r["id"],)).fetchall()]
-            direction = AP if A.AP in accts else (AR if A.AR in accts else AP)
+            direction = AP if AP in sides else AR
             out.append({"file_hash": fh, "invoice_no": r["source_ref"],
                         "entry_no": r["entry_no"], "direction": direction,
+                        "kind": r["source_kind"],
                         "gross": str(gross), "settled": str(settled),
                         "open": str(open_amt)})
     return out
 
 
+def other_control_movements(conn) -> Dict[str, Decimal]:
+    """非发票来源（手工/期初/流水入账…）对往来控制账户的净影响，按对手方口径计入明细侧。
+
+    发票口径的明细在 `control_reconciliation` 里按"应计全额 - 已结"逐票算；手工凭证等直接动
+    应付/应收的分录不在其中，若不单独计入就会让"控制账户 == 明细合计"产生**假告警**
+    （见 ledger.service.post_manual_entry 的软护栏）。
+    归属判定用 **实际来源 kind**：红冲分录（source_kind='reversal'）看它红冲的原分录——
+    红冲发票应计/结算已在发票口径里体现（原分录转 Reversed 后被排除），不可重复计。
+    """
+    out = {AP: ZERO, AR: ZERO}
+    rows = conn.execute(
+        "SELECT je.id AS id, je.source_kind AS kind, orig.source_kind AS orig_kind "
+        "FROM journal_entries je LEFT JOIN journal_entries orig ON je.reverses_id = orig.id "
+        "WHERE je.status IN ('Posted','Reversed')").fetchall()
+    for r in rows:
+        kind = r["orig_kind"] if r["orig_kind"] else r["kind"]
+        # invoice/settlement/opening 往来均已在"可结算明细侧"按(应计全额-已结)计;此处只收手工等其它来源
+        if kind in ("invoice", "settlement", "opening"):
+            continue
+        for x in conn.execute(
+                "SELECT account, debit, credit FROM journal_lines WHERE entry_id=?",
+                (r["id"],)).fetchall():
+            side = A.control_side(x["account"])       # 按编码判归属，不比较科目全名
+            if side is None:
+                continue
+            dr, cr = _dec(x["debit"]), _dec(x["credit"])
+            if side == AP:
+                out[AP] += cr - dr        # 负债：贷增借减
+            else:
+                out[AR] += dr - cr        # 资产：借增贷减
+    return out
+
+
+def _control_balance(led, side: str) -> Decimal:
+    """控制账户总账余额（正数口径）：把**同编码的所有科目写法**汇总，与明细侧口径一致。"""
+    total = ZERO
+    for acct, dr, cr in led.trial_balance()[2]:
+        if A.control_side(acct) != side:
+            continue
+        total += (cr - dr) if side == AP else (dr - cr)
+    return total
+
+
 def control_reconciliation(conn: Optional[sqlite3.Connection] = None) -> dict:
-    """控制账户对账：应付/应收总账余额 == 各自明细未结合计（应恒等）。"""
+    """控制账户对账：应付/应收总账余额 == 明细合计（发票逐票未结 + 非发票往来净额），应恒等。"""
     from .service import load_ledger
     led = load_ledger()
     with db._conn_or(conn) as c:
         rows = c.execute(
             "SELECT source_hash, total_debit, id FROM journal_entries "
-            "WHERE source_kind='invoice' AND status='Posted' AND reverses_id IS NULL").fetchall()
+            "WHERE source_kind IN ('invoice','opening') AND status='Posted' AND reverses_id IS NULL").fetchall()
         detail = {AP: ZERO, AR: ZERO}
         for r in rows:
-            fh = r["source_hash"]
-            open_amt = _dec(r["total_debit"]) - settled_amount(fh, c)
             accts = [x["account"] for x in c.execute(
                 "SELECT account FROM journal_lines WHERE entry_id=?", (r["id"],)).fetchall()]
-            d = AP if A.AP in accts else (AR if A.AR in accts else AP)
+            sides = [A.control_side(a) for a in accts]
+            if AP not in sides and AR not in sides:      # 期初非往来项不计入往来明细
+                continue
+            fh = r["source_hash"]
+            open_amt = _dec(r["total_debit"]) - settled_amount(fh, c)
+            d = AP if AP in sides else AR
             detail[d] += open_amt
-    control_ap = -led.net(A.AP)      # 负债贷方 → 取相反为正
-    control_ar = led.net(A.AR)       # 资产借方
+        other = other_control_movements(c)
+    control_ap = _control_balance(led, AP)      # 负债贷方 → 取相反为正
+    control_ar = _control_balance(led, AR)      # 资产借方
+    total = {AP: detail[AP] + other[AP], AR: detail[AR] + other[AR]}
     return {
-        "AP": {"control": str(control_ap), "detail": str(detail[AP]),
-               "ok": control_ap == detail[AP]},
-        "AR": {"control": str(control_ar), "detail": str(detail[AR]),
-               "ok": control_ar == detail[AR]},
+        "AP": {"control": str(control_ap), "detail": str(total[AP]),
+               "invoice_detail": str(detail[AP]), "other": str(other[AP]),
+               "ok": control_ap == total[AP]},
+        "AR": {"control": str(control_ar), "detail": str(total[AR]),
+               "invoice_detail": str(detail[AR]), "other": str(other[AR]),
+               "ok": control_ar == total[AR]},
     }

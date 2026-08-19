@@ -43,6 +43,17 @@
   .tbcard{background:#fff;border:1px solid #e2e6ec;border-radius:10px;padding:6px 0;margin-bottom:12px}
   .tbfoot td{font-weight:700;border-top:2px solid #d5dbe3}
   .warnbar{background:#fff4e5;border:1px solid #f0c98a;color:#8a5a00;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:13px}
+  /* 预览原件（审核式高亮） */
+  .pvcap{font-size:12px;color:#64748b;margin:6px 14px 4px}
+  .pvscroll{max-height:460px;overflow:auto;margin:0 14px 12px;border:1px solid #d5deea;border-radius:6px;background:#fff}
+  .pvimg{position:relative;display:inline-block;line-height:0;min-width:100%}
+  .pvimg img{max-width:100%;display:block}
+  .fldbox{position:absolute;border:2px solid;box-sizing:border-box;pointer-events:none;border-radius:2px}
+  .fb-no{border-color:#2f6fed;background:rgba(47,111,237,.12)}
+  .fb-date{border-color:#0f8f5f;background:rgba(15,143,95,.12)}
+  .fb-amt{border-color:#e8820c;background:rgba(232,130,12,.12)}
+  .fb-vendor{border-color:#7b3fbf;background:rgba(123,63,191,.12)}
+  .fb-row{border-color:#eab308;background:rgba(234,179,8,.16)}
   select{font-size:13px;padding:3px 6px;border:1px solid #cbd2db;border-radius:6px}
 </style>
 </head>
@@ -50,13 +61,6 @@
 <header>
   <div class="hbar">
     <div class="htitle"><h1>📒 总账</h1><p>人工审核通过后由人显式触发入账（AI 绝不自动过账）；应计为权责发生制，借贷强制平衡</p></div>
-    <nav class="hnav">
-      <a href="/" class="navbtn">← 提取上传</a>
-      <a href="/review" class="navbtn">📝 提取纠错/审核</a>
-      <a href="/reconcile" class="navbtn">🔗 对账</a>
-      <a href="/reports" class="navbtn">📊 财务报表</a>
-      <a href="/help" target="_blank" class="navbtn">📖 使用说明</a>
-    </nav>
   </div>
   <div id="summary">加载中…</div>
 </header>
@@ -78,15 +82,19 @@ async function postJSON(url, body){
 async function getJSON(url){ try{ return await (await fetch(url)).json(); }catch(e){ return {}; } }
 
 let CUR = (function(){ try{ return localStorage.getItem('ledger:tab')||'postable'; }catch(e){ return 'postable'; } })();
-const TABS = [{k:'postable',label:'待入账'},{k:'open',label:'待结算'},{k:'entries',label:'已过账分录'},{k:'trial',label:'试算平衡'}];
+const TABS = [{k:'postable',label:'待入账'},{k:'open',label:'待结算'},{k:'statement',label:'流水入账'},{k:'bankrecon',label:'余额调节'},{k:'manual',label:'新建凭证'},{k:'opening',label:'期初建账'},{k:'fx',label:'汇率'},{k:'entries',label:'已过账分录'},{k:'trial',label:'试算平衡'}];
+let ACCOUNTS = [];   // 科目表(下拉)
 
+let LASTSUM = {};
 async function loadSummary(){
   const s = await getJSON('/api/ledger/summary');
+  LASTSUM = s || {};
   const bal = s.balanced ? '<b>平衡 ✓</b>' : '<b class="bad">不平衡 ✗</b>';
   const ctl = s.control_ok ? '' : '　<b class="bad">控制账户≠明细 ✗</b>';
+  const um = s.unmarked_cash ? `　<b class="bad">⚠ ${s.unmarked_cash} 张历史分录动了现金但没标现金流活动（现金流量表会漏计、报表勾稽不通过）——请在「已过账分录」里红冲后带活动类别重记</b>` : '';
   document.getElementById('summary').innerHTML =
-    `待入账 <b>${s.postable||0}</b>　待结算 <b>${s.open||0}</b>　已过账 <b>${s.posted||0}</b>　已红冲 <b>${s.reversed||0}</b>　`+
-    `试算：借 <b>${esc(s.total_debit||'0')}</b> / 贷 <b>${esc(s.total_credit||'0')}</b>　${bal}${ctl}`;
+    `待入账(发票) <b>${s.postable||0}</b>　流水待入账 <b>${s.statement_open||0}</b>　待结算 <b>${s.open||0}</b>　已过账 <b>${s.posted||0}</b>　已红冲 <b>${s.reversed||0}</b>　`+
+    `试算：借 <b>${esc(s.total_debit||'0')}</b> / 贷 <b>${esc(s.total_credit||'0')}</b>　${bal}${ctl}${um}`;
 }
 function renderTabs(){
   document.getElementById('tabs').innerHTML = TABS.map(t=>
@@ -103,11 +111,66 @@ function jeTable(lines){
   return r+'</table>';
 }
 
+// 预览原件（折叠·审核式高亮）：发票叠关键字段框；流水滚动到该笔所在行并叠框。坐标系与 /page/0 一致。
+function _boxStyle(b,sz){
+  const L=b[1]/sz[0]*100,T=b[2]/sz[1]*100,W=(b[3]-b[1])/sz[0]*100,H=(b[4]-b[2])/sz[1]*100;
+  return `left:${L.toFixed(2)}%;top:${T.toFixed(2)}%;width:${W.toFixed(2)}%;height:${H.toFixed(2)}%`;
+}
+function _fbox(b,sz,cls,label){ if(!b||!sz) return ''; return `<div class="fldbox ${cls}" title="${label||''}" style="${_boxStyle(b,sz)}"></div>`; }
+async function togglePreview(kind, hash, index, id){
+  const box = document.getElementById('pv-'+id);
+  if(!box) return;
+  if(box.style.display && box.style.display!=='none'){ box.style.display='none'; return; }
+  box.style.display='block';
+  if(box.dataset.loaded) return;
+  box.innerHTML='<div class="muted" style="margin-top:8px">加载原件中…</div>';
+  let d={}; try{ d=await getJSON('/api/review/'+encodeURIComponent(hash)); }catch(e){}
+  const sz=(d.page_sizes&&d.page_sizes[0])?d.page_sizes[0]:null;
+  const src=(window.APP_BASE||'')+'/api/review/'+encodeURIComponent(hash)+'/page/0';
+  let boxes='', cap='', focusBox=null;
+  if(kind==='statement'){
+    const t=(d.transactions||[])[index]||{};
+    focusBox = t.bbox||t.date_bbox;
+    boxes = (t.bbox?`<div class="fldbox fb-row" style="${_boxStyle(t.bbox,sz)}"></div>`:'')
+          + _fbox(t.date_bbox,sz,'fb-date','日期') + _fbox(t.desc_bbox,sz,'fb-vendor','摘要') + _fbox(t.amount_bbox,sz,'fb-amt','金额');
+    cap = `流水第 ${(index|0)+1} 笔　<b>黄框=本笔所在行</b>　绿=日期 紫=摘要 橙=金额`;
+  } else {
+    const F=d.fields||{};
+    boxes = _fbox((F.invoice_no||{}).bbox,sz,'fb-no','发票号') + _fbox((F.invoice_date||{}).bbox,sz,'fb-date','日期')
+          + _fbox((F.total_due||{}).bbox,sz,'fb-amt','金额') + _fbox((F.issuer_name||{}).bbox,sz,'fb-vendor','公司/供应商');
+    cap = `发票原件　蓝=发票号 绿=日期 橙=金额 紫=公司/供应商`;
+  }
+  box.innerHTML = `<div class="pvcap">${cap}</div><div class="pvscroll"><div class="pvimg"><img src="${src}" onerror="this.closest('.pvscroll').innerHTML='&lt;div class=&quot;muted&quot; style=&quot;padding:8px&quot;&gt;无法预览原件（该记录未随附原始文件）。发票原件可到「审核」页查看。&lt;/div&gt;'">${boxes}</div></div>`;
+  box.dataset.loaded='1';
+  if(focusBox && sz){                       // 流水长图：滚动到本笔所在行
+    const img=box.querySelector('img'), scroll=box.querySelector('.pvscroll');
+    const doScroll=()=>{ if(!img.clientHeight) return; scroll.scrollTop=Math.max(0, focusBox[2]/sz[1]*img.clientHeight - scroll.clientHeight/2); };
+    if(img){ img.complete ? doScroll() : img.addEventListener('load', doScroll); }
+  }
+}
+async function selfNudge(){
+  // 侦测"既开票又收票"的名字=很可能是贵司；未建档则提示一键建档为 self，之后 AR/AP 方向自动判对
+  let d={}; try{ d=await getJSON('/api/counterparties/self-candidates'); }catch(e){}
+  const cs=(d.candidates||[]); if(!cs.length) return '';
+  return cs.map(c=>`<div class="warnbar" style="background:#eaf2ff;border-color:#a9c7f5;color:#1b4fd0">
+    检测到「<b>${esc(c.name)}</b>」既作开票方(${c.as_issuer})又作收票方(${c.as_customer})，很可能是<b>贵司</b>。
+    建档为「我方主体」后，贵司开出的发票会自动记<b>应收(AR)</b>、收到的账单记<b>应付(AP)</b>，不必逐张手改方向。
+    <button class="ok" style="margin-left:8px" onclick="doRegisterSelf('${esc(c.name).replace(/'/g,"\\'")}')">✓ 一键建档为我方主体</button></div>`).join('');
+}
+async function doRegisterSelf(name){
+  const r=await postJSON('/api/counterparties/register', {name:name, kind:'self', force:true});
+  if(r&&(r.party||r.id)){ await loadSummary(); render(); }   // 建档后方向预览自动纠正
+}
 async function renderPostable(){
   const d = await getJSON('/api/ledger/postable');
   const invs = d.invoices||[];
-  if(!invs.length){ document.getElementById('body').innerHTML='<div class="empty">没有待入账的发票。先在「审核」里审核通过发票。</div>'; return; }
-  let h = '';
+  const nudge = await selfNudge();
+  if(!invs.length){
+    const so = LASTSUM.statement_open||0;
+    const hint = so ? `<br>无票的银行现金收支（手续费/利息/缴税/转账等）请到「<a href="#" onclick="switchTab('statement');return false;">流水入账</a>」——当前有 <b>${so}</b> 笔待入账。` : '';
+    document.getElementById('body').innerHTML=nudge+'<div class="empty">没有待入账的发票。先在「审核」里审核通过发票。'+hint+'</div>'; return;
+  }
+  let h = nudge;
   for(const x of invs){
     const pv = x.preview||{};
     const dir = pv.direction||'AP';
@@ -127,14 +190,20 @@ async function renderPostable(){
             <option value="AP">应付/费用 (AP)</option>
             <option value="AR">应收/收入 (AR)</option>
           </select></label>
+        <label class="muted" title="VAT/GST 辖区勾选=进项税可抵扣;美国销售税等不可抵扣则取消勾选,税并入成本">
+          <input type="checkbox" id="td-${esc(x.file_hash)}" checked> 进项税可抵扣</label>
+        <button onclick="togglePreview('invoice','${esc(x.file_hash)}',null,'${esc(x.file_hash)}')" title="预览原始发票并高亮关键字段">🔍 预览原件</button>
         <button class="ok" onclick="doPost('${esc(x.file_hash)}')">✓ 确认入账（过账）</button>
-      </div></div>`;
+      </div>
+      <div id="pv-${esc(x.file_hash)}" style="display:none"></div></div>`;
   }
   document.getElementById('body').innerHTML = h;
 }
 async function doPost(fh){
   const sel = document.getElementById('dir-'+fh);
-  const r = await postJSON('/api/ledger/post', {file_hash:fh, direction:(sel&&sel.value)||''});
+  const td = document.getElementById('td-'+fh);
+  const r = await postJSON('/api/ledger/post', {file_hash:fh, direction:(sel&&sel.value)||'',
+    tax_deductible: td ? !!td.checked : undefined});
   if(r&&r.entry_no){ alert('已入账，凭证号 '+r.entry_no); await loadSummary(); render(); }
 }
 
@@ -145,28 +214,37 @@ const DIFF_REASONS = [
   {v:'withholding_ap',label:'预扣税-付款代扣'},
   {v:'discount',label:'现金折扣'},
   {v:'rounding',label:'舍入差异（微差）'},
+  {v:'fx_gain_loss',label:'汇兑损益（外币汇率变动）'},
 ];
 async function renderOpen(){
   const d = await getJSON('/api/ledger/open');
   const invs = d.invoices||[]; const ctl = d.control||{};
   let ctlbar = '';
   const bad = (ctl.AP&&!ctl.AP.ok)||(ctl.AR&&!ctl.AR.ok);
-  if(bad) ctlbar = `<div class="warnbar">⚠ 控制账户余额 ≠ 明细未结合计！应付 控制${esc(ctl.AP.control)}/明细${esc(ctl.AP.detail)}，应收 控制${esc(ctl.AR.control)}/明细${esc(ctl.AR.detail)}。</div>`;
+  const ctlDetail = s=>`控制${esc(s.control)}/明细${esc(s.detail)}` +
+    (s.other && parseFloat(s.other)!==0 ? `（发票${esc(s.invoice_detail)}+手工往来${esc(s.other)}）` : '');
+  if(bad) ctlbar = `<div class="warnbar">⚠ 控制账户余额 ≠ 明细合计！应付 ${ctlDetail(ctl.AP)}，应收 ${ctlDetail(ctl.AR)}。</div>`;
   if(!invs.length){ document.getElementById('body').innerHTML=ctlbar+'<div class="empty">没有待结算的发票。发票入账后在此按实际收/付款结算。</div>'; return; }
   const reasonOpts = DIFF_REASONS.map(r=>`<option value="${r.v}">${r.label}</option>`).join('');
   let h = ctlbar;
   for(const x of invs){
     const dir = x.direction; const isAP = dir==='AP';
+    const m = x.matched;
+    const matchBar = m ? `<div style="padding:6px 14px;background:#eaf5ec;border-top:1px solid #d6ebd9;font-size:12px;color:#137333">
+        🔗 对账已匹配银行现金 <b>${esc(m.cash)}</b>${m.date?('（'+esc(m.date)+'）'):''}
+        <button class="ok" style="padding:4px 12px;margin-left:8px" onclick="doSettleFromMatch('${esc(x.file_hash)}')">据对账结算</button></div>` : '';
     h += `<div class="card">
       <div class="chead">
         <span class="badge b-${dir}">${isAP?'应付':'应收'}</span>
         <span class="no">${esc(x.invoice_no||x.entry_no)}</span>
         <span class="memo">全额 ${esc(x.gross)}　已结 ${esc(x.settled)}</span>
         <span class="amt">未结 ${esc(x.open)}</span>
-      </div>
+      </div>${matchBar}
       <div class="cact" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">
         <label class="muted">清账票面额 <input id="sa-${esc(x.file_hash)}" type="text" placeholder="默认全部 ${esc(x.open)}" style="width:120px"></label>
-        <label class="muted">${isAP?'实付':'实收'}现金 <input id="cash-${esc(x.file_hash)}" type="text" placeholder="必填" style="width:110px"></label>
+        <label class="muted">${isAP?'实付':'实收'}现金 <input id="cash-${esc(x.file_hash)}" type="text" value="${m?esc(m.cash):''}" placeholder="必填" style="width:110px"></label>
+        <label class="muted">付款币种 <input id="ccy-${esc(x.file_hash)}" type="text" placeholder="默认 USD" style="width:70px;text-transform:uppercase" title="外币付款填币种(如 EUR)，按结算日汇率换算，差额为汇兑损益"></label>
+        <label class="muted">结算日期 <input id="sdate-${esc(x.file_hash)}" type="date"></label>
         <label class="muted">差额原因 <select id="reason-${esc(x.file_hash)}">${reasonOpts}</select></label>
         <label class="muted">现金流活动 <select id="act-${esc(x.file_hash)}">
           <option value="">自动（按发票性质）</option>
@@ -180,15 +258,172 @@ async function renderOpen(){
 }
 async function doSettle(fh, open){
   const cash = (document.getElementById('cash-'+fh)||{}).value;
-  const sa = (document.getElementById('sa-'+fh)||{}).value;
+  let sa = (document.getElementById('sa-'+fh)||{}).value;
   const reason = (document.getElementById('reason-'+fh)||{}).value;
   const act = (document.getElementById('act-'+fh)||{}).value;
+  const ccy = ((document.getElementById('ccy-'+fh)||{}).value||'').trim().toUpperCase();
+  const sdate = (document.getElementById('sdate-'+fh)||{}).value;
   if(!cash){ alert('请填写实际收/付现金金额'); return; }
+  if(ccy && ccy!=='USD'){
+    if(!sdate){ alert('外币付款需填结算日期（用于取当日汇率）'); return; }
+    // 外币须显式清账面额（账面口径）：默认全部未结；部分付款请在「清账票面额」填实际清账额
+    if(!sa){ sa = open; }
+  }
   const body = {file_hash:fh, cash_amount:cash, diff_reason:reason||undefined,
                 settle_amount:sa||undefined, activity:act||undefined,
+                cash_currency:ccy||undefined, date:sdate||undefined,
                 tolerance:(reason==='rounding')?'1.00':undefined};
   const r = await postJSON('/api/ledger/settle', body);
   if(r&&r.entry_no){ alert('已结算，凭证号 '+r.entry_no); await loadSummary(); render(); }
+}
+async function doSettleFromMatch(fh){
+  const reason = (document.getElementById('reason-'+fh)||{}).value;   // 若有手续费等差额可先选原因
+  const r = await postJSON('/api/ledger/settle-from-match', {file_hash:fh, diff_reason:reason||undefined});
+  if(r&&r.entry_no){ alert('已据对账结算 '+r.cash+'，凭证号 '+r.entry_no); await loadSummary(); render(); }
+}
+
+// ---- 流水入账（无发票的银行现金收支）----
+const ACTS = [{v:'operating',t:'经营'},{v:'investing',t:'投资'},{v:'financing',t:'筹资'}];
+async function renderStatement(){
+  if(!ACCOUNTS.length){ try{ ACCOUNTS=(await getJSON('/api/ledger/accounts')).accounts||[]; }catch(e){} }
+  const d = await getJSON('/api/ledger/statement-lines');
+  const rows = d.lines||[];
+  if(!rows.length){ document.getElementById('body').innerHTML='<div class="empty">没有待入账的银行流水（有对应发票的收付款请走「待结算」）。</div>'; return; }
+  const acctOpts = '<option value="">— 选对方科目 —</option>' +
+    ACCOUNTS.map(a=>`<option value="${esc(a.account)}">${esc(a.account)}</option>`).join('');
+  const actOpts = ACTS.map(a=>`<option value="${a.v}">${a.t}</option>`).join('');
+  let h = '<div class="muted" style="margin:8px 0">对没有发票的银行现金收支（手续费/利息/缴税/工资/转账等）逐笔选对方科目入账。有发票的收付款走「待结算」，勿在此重复。</div>';
+  for(const x of rows){
+    const id = esc(x.stmt_hash)+'-'+x.index;
+    const isOut = x.direction==='out';
+    const foreign = (x.currency||'USD')!=='USD';
+    h += `<div class="card">
+      <div class="chead">
+        <span class="badge b-${isOut?'AP':'AR'}">${isOut?'支出':'收入'}</span>
+        <span class="no">${esc(x.date||'')}</span>
+        <span class="memo">${esc(x.description||'(无摘要)')}</span>
+        <span class="amt">${esc(x.amount)} ${esc(x.currency||'')}</span>
+      </div>
+      <div class="cact" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">
+        <span class="muted">${isOut?'借 对方科目 / 贷 银行':'借 银行 / 贷 对方科目'}</span>
+        <select id="sca-${id}">${acctOpts}</select>
+        <label class="muted">活动 <select id="sact-${id}">${actOpts}</select></label>
+        ${foreign?'<span class="muted" style="font-size:12px">外币：按交易日汇率换算（无汇率会提示先录入）</span>':''}
+        <button onclick="togglePreview('statement','${esc(x.stmt_hash)}',${x.index},'${id}')" title="预览该流水并高亮此笔所在行">🔍 预览原件</button>
+        <button class="ok" onclick="doPostStatement('${esc(x.stmt_hash)}',${x.index})">✓ 入账</button>
+      </div>
+      <div id="pv-${id}" style="display:none"></div>
+    </div>`;
+  }
+  document.getElementById('body').innerHTML = h;
+}
+async function doPostStatement(sh, idx){
+  const id = sh+'-'+idx;
+  const ca = (document.getElementById('sca-'+id)||{}).value;
+  const act = (document.getElementById('sact-'+id)||{}).value;
+  if(!ca){ alert('请选择对方科目'); return; }
+  const r = await postJSON('/api/ledger/post-statement',
+    {stmt_hash:sh, index:idx, counter_account:ca, activity:act});
+  if(r&&r.entry_no){ alert('已入账，凭证号 '+r.entry_no); await loadSummary(); render(); }
+}
+
+// ---- 汇率（外币→功能货币，人工录入·固定）----
+let FX_C = '', FX_D = '', FX_R = '', FX_ASOF = '';
+async function renderFx(){
+  const d = await getJSON('/api/fx/rates');
+  const func = d.functional || 'USD';
+  const rates = d.rates || {};
+  let rows = '';
+  for(const ccy of Object.keys(rates).sort()){
+    for(const r of rates[ccy]){
+      // 显示 6 位便于阅读；换算在后端始终用存储的高精度原值(见 wiki 汇率规则「精度」)
+      const shown = (function(){ const n=Number(r.rate); return isFinite(n)?n.toFixed(6):esc(r.rate); })();
+      rows += `<tr><td>${esc(ccy)}</td><td>${esc(r.date)}</td><td class="num" title="${esc(r.rate)}">${shown}</td></tr>`;
+    }
+  }
+  if(!rows) rows = '<tr><td colspan="3" class="muted">还没有汇率，请在下方录入。</td></tr>';
+  document.getElementById('body').innerHTML = `
+    <div class="card"><div class="chead"><span class="no">汇率表（外币 → ${esc(func)}）</span>
+      <span class="memo">Frankfurter 按日拉取的本地缓存 · 换算取「≤该日期的最近一条」</span></div>
+      <div style="padding:12px 14px">
+        <div class="cact" style="justify-content:flex-start;gap:8px;margin-bottom:8px">
+          <label class="muted">拉取日期 <input id="fx-upd" type="date"></label>
+          <button class="ok" onclick="doUpdateRates()">↧ 从 Frankfurter 拉取更新</button>
+          <span class="muted" style="font-size:12px">仅拉取公开汇率、写入本地，不上传任何内部数据</span>
+        </div>
+        <table class="je"><tr><th>币种</th><th>有效日</th><th style="text-align:right">汇率（1 外币 = ? ${esc(func)}）</th></tr>${rows}</table>
+        <h4 style="margin:16px 0 6px;color:#425466">手工录入 / 修正一条汇率（离线兜底）</h4>
+        <div class="cact" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">
+          <input id="fx-c" placeholder="币种如 EUR" value="${esc(FX_C)}" oninput="FX_C=this.value.toUpperCase()" style="width:110px;text-transform:uppercase">
+          <input id="fx-d" type="date" value="${esc(FX_D)}" oninput="FX_D=this.value">
+          <input id="fx-r" type="text" inputmode="decimal" placeholder="汇率如 1.10" value="${esc(FX_R)}" oninput="FX_R=this.value" style="width:120px;text-align:right">
+          <button class="ok" onclick="doAddRate()">✓ 保存汇率</button>
+        </div>
+        <div class="muted" style="margin-top:8px;font-size:12px">外币发票入账时按【录入系统当日】的此表汇率换算成 ${esc(func)}；无对应汇率则拒绝入账（先拉取或手工录入）。数据源可插拔（换 API 只替换 provider）。</div>
+      </div></div>` + await fxRevalBlock(func);
+}
+async function doUpdateRates(){
+  const dt = (document.getElementById('fx-upd')||{}).value;
+  const r = await postJSON('/api/fx/update', dt?{date:dt}:{});
+  if(r&&(r.updated!=null)){ alert('已从 '+(r.provider||'provider')+' 更新 '+r.updated+' 个币种（有效日 '+(r.effective_date||'?')+'）'); renderFx(); }
+}
+async function fxRevalBlock(func){
+  const v = await getJSON('/api/fx/revaluation'+(FX_ASOF?('?as_of='+encodeURIComponent(FX_ASOF)):''));
+  const by = v.by_currency||[];
+  let rows = '';
+  for(const c of by){
+    const pl = c.missing_rate ? '<span class="bad">缺期末汇率</span>' : esc(c.unrealized_pl);
+    rows += `<tr><td>${esc(c.currency)}</td><td class="num">${esc(c.open_ccy)}</td><td class="num">${esc(c.book_usd)}</td>`+
+            `<td class="num">${c.missing_rate?'—':esc(c.rate)}</td><td class="num">${c.missing_rate?'—':esc(c.reval_usd)}</td><td class="num">${pl}</td></tr>`;
+  }
+  if(!rows) rows = '<tr><td colspan="6" class="muted">没有未结的外币往来敞口。</td></tr>';
+  const miss = (v.missing_rates||[]).length ? `　<b class="bad">⚠ 缺 ${(v.missing_rates||[]).join('、')} 的 ${esc(v.as_of)} 汇率</b>` : '';
+  return `<div class="card"><div class="chead"><span class="no">期末外币敞口重估（报告 · 不记账）</span>
+      <span class="memo">从未结外币发票回溯原币敞口，按期末汇率重估 → 未实现汇兑损益</span></div>
+      <div style="padding:12px 14px">
+        <label class="muted">期末日期 <input id="fx-asof" type="date" value="${esc(FX_ASOF)}" onchange="FX_ASOF=this.value;renderFx()"></label>
+        <span class="muted" style="font-size:12px">　未实现汇兑损益合计 <b>${esc(v.total_unrealized_pl)}</b> ${esc(func)}（AR 升值为收益、AP 升值为损失）${miss}</span>
+        <table class="je" style="margin-top:8px"><tr><th>币种</th><th style="text-align:right">原币敞口</th><th style="text-align:right">账面 ${esc(func)}</th><th style="text-align:right">期末汇率</th><th style="text-align:right">重估 ${esc(func)}</th><th style="text-align:right">未实现损益</th></tr>${rows}</table>
+        <div class="muted" style="margin-top:8px;font-size:12px">诊断报告：展示外币敞口与潜在汇兑损益。生成重估调整分录（含未实现损益的下期冲回、往来明细一致性）为后续增量，此页不记账。</div>
+      </div></div>`;
+}
+async function doAddRate(){
+  if(!FX_C||!FX_D||!FX_R){ alert('请填币种、日期、汇率'); return; }
+  const r = await postJSON('/api/fx/rate', {currency:FX_C, date:FX_D, rate:FX_R});
+  if(r&&r.currency){ alert('已保存 '+r.currency+' 汇率'); FX_R=''; renderFx(); }
+}
+
+// ---- 银行余额调节（诊断，不记账）----
+async function renderBankRecon(){
+  const v = await getJSON('/api/ledger/bank-recon');
+  const stmts = v.statements||[];
+  let h = `<div class="muted" style="margin:8px 0">逐张银行流水单核对：<b>自洽校验</b>(期初+收−支==期末，不符多为流水解析错) 与 <b>入账进度</b>。差异由人核查、此页不记账。总账 1002 银行存款余额 <b>${esc(v.ledger_bank)}</b>　待处理流水 <b>${v.total_open||0}</b> 笔${v.self_check_failures?`　<b class="bad">⚠ ${v.self_check_failures} 张流水不自洽</b>`:''}<br>此页只读；账户名称（开户行）等表头信息请到「审核 → 🏦 审核流水」选中该流水后，在右侧「账户信息 → 开户行」里填写（保存即留痕）。</div>`;
+  if(!stmts.length){ document.getElementById('body').innerHTML = h+'<div class="empty">还没有银行流水。</div>'; return; }
+  for(const s of stmts){
+    const chk = s.self_check===true ? '<span style="color:#137333">自洽 ✓</span>'
+              : s.self_check===false ? '<span class="bad">不自洽 ✗</span>'
+              : '<span class="muted">银行未报期末余额，无法校验</span>';
+    const period = [s.period_start,s.period_end].filter(Boolean).join(' ~ ');
+    h += `<div class="card">
+      <div class="chead">
+        <span class="no"><a href="${(window.APP_BASE||'')}/review?hash=${encodeURIComponent(s.stmt_hash)}&field=bank_name" title="点击到「审核」填写/修改开户行等表头信息" style="color:inherit;text-decoration:underline dotted;cursor:pointer">${esc(s.bank_name||(s.bank_account_no?('账号 '+s.bank_account_no):'')||'(未命名账户 · 点此填写)')}</a></span>
+        <span class="memo">${esc(period)}　${esc(s.currency||'')}</span>
+        <span class="amt">${chk}</span>
+      </div>
+      <div class="cact" style="justify-content:flex-start;flex-wrap:wrap;gap:14px">
+        <span class="muted">期初 <b>${esc(s.opening||'—')}</b></span>
+        <span class="muted">收入 <b>${esc(s.in_total)}</b></span>
+        <span class="muted">支出 <b>${esc(s.out_total)}</b></span>
+        <span class="muted">净额 <b>${esc(s.net)}</b></span>
+        <span class="muted">期末 <b>${esc(s.closing||'—')}</b></span>
+      </div>
+      <div class="cact" style="justify-content:flex-start;flex-wrap:wrap;gap:14px">
+        <span class="muted">共 <b>${s.txn_count}</b> 笔　已据发票结算 <b>${s.reconciled_unposted}</b>　已流水入账 <b>${s.posted}</b>　`+
+        `${s.open?`<b class="bad">待处理 ${s.open}</b>`:'<b>待处理 0</b>'}</span>
+      </div>
+    </div>`;
+  }
+  document.getElementById('body').innerHTML = h;
 }
 
 async function renderEntries(){
@@ -202,7 +437,7 @@ async function renderEntries(){
       <div class="chead">
         <span class="badge b-${esc(e.status)}">${esc(e.status)}</span>
         <span class="no">${esc(e.entry_no)}</span>
-        <span class="memo">${esc(e.date||'')}　${esc(e.memo||'')}</span>
+        <span class="memo">${esc(e.date||'')}　${esc(e.memo||'')}${e.counterparty?'　对手方：'+esc(e.counterparty):''}</span>
         <span class="amt">${esc(e.total)}</span>
       </div>
       ${jeTable(e.lines)}
@@ -217,6 +452,74 @@ async function doReverse(no){
   if(r&&r.reversal_no){ alert('已红冲，冲销凭证号 '+r.reversal_no); await loadSummary(); render(); }
 }
 
+// ---- 新建凭证(手工分录)----
+let MROWS = [{},{}];   // 至少两行
+async function renderManual(){
+  if(!ACCOUNTS.length){ try{ ACCOUNTS=(await getJSON('/api/ledger/accounts')).accounts||[]; }catch(e){} }
+  const opts = '<option value="">— 选科目 —</option>' +
+    ACCOUNTS.map(a=>`<option value="${esc(a.account)}">${esc(a.account)}</option>`).join('');
+  let rows = MROWS.map((r,i)=>`
+    <tr>
+      <td><select onchange="mset(${i},'account',this.value)" style="min-width:230px">${opts.replace('value="'+esc(r.account||'')+'"','value="'+esc(r.account||'')+'" selected')}</select>
+          <input placeholder="或手填科目" value="${esc(r.account||'')}" oninput="mset(${i},'account',this.value)" style="width:150px;margin-left:4px"></td>
+      <td><input type="text" inputmode="decimal" placeholder="借" value="${esc(r.debit||'')}" oninput="mset(${i},'debit',this.value)" style="width:100px;text-align:right"></td>
+      <td><input type="text" inputmode="decimal" placeholder="贷" value="${esc(r.credit||'')}" oninput="mset(${i},'credit',this.value)" style="width:100px;text-align:right"></td>
+      <td><input placeholder="行摘要(选填)" value="${esc(r.memo||'')}" oninput="mset(${i},'memo',this.value)" style="width:160px"></td>
+      <td>${MROWS.length>2?`<button class="no" style="padding:3px 9px" onclick="mdel(${i})">✕</button>`:''}</td>
+    </tr>`).join('');
+  const dr = MROWS.reduce((s,r)=>s+(parseFloat(r.debit)||0),0);
+  const cr = MROWS.reduce((s,r)=>s+(parseFloat(r.credit)||0),0);
+  const bal = Math.abs(dr-cr)<1e-9 && dr>0;
+  // 往来控制账户软护栏：含应付/应收行 → 须显式确认 + 填对手方
+  const ctlRows = MROWS.filter(r=>isControlAcct(r.account)).map(r=>r.account);
+  const ctlOK = !ctlRows.length || (MCTL && MCP.trim());
+  const ctlBox = ctlRows.length ? `
+        <div class="warnbar" style="margin:0 0 10px">⚠ 本凭证含往来控制账户（${esc(ctlRows.join('、'))}）。
+          应付/应收正常应由发票应计/结算产生；手工直接动它请确认这是<b>期初建账</b>或<b>往来调整</b>，并填对手方（否则往来无从追踪）。
+          <div style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+            <label><input type="checkbox" ${MCTL?'checked':''} onchange="MCTL=this.checked;renderManual()"> 我确认手工调整往来</label>
+            <label>对手方 <input placeholder="如:ACME Inc" value="${esc(MCP)}" oninput="MCP=this.value" style="width:200px"></label>
+          </div></div>` : '';
+  document.getElementById('body').innerHTML = `
+    <div class="card"><div class="chead"><span class="no">新建手工凭证</span>
+      <span class="memo">期初建账 / 计提摊销折旧 / 调整 / 非发票入账 都用它</span></div>
+      <div style="padding:12px 14px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <label class="muted">记账日期 <input id="m-date" type="date" value="${esc(MDATE)}" oninput="MDATE=this.value"></label>
+          <label class="muted">凭证摘要 <input id="m-memo" placeholder="如:计提6月房租" value="${esc(MMEMO)}" oninput="MMEMO=this.value" style="width:220px"></label>
+          <label class="muted">现金流活动(动银行/现金时必选)
+            <select id="m-act" onchange="MACT=this.value">
+              <option value="" ${MACT?'':'selected'}>不动现金/内部腾挪</option>
+              <option value="operating" ${MACT==='operating'?'selected':''}>经营</option>
+              <option value="investing" ${MACT==='investing'?'selected':''}>投资</option>
+              <option value="financing" ${MACT==='financing'?'selected':''}>筹资</option>
+            </select></label>
+        </div>
+        <table class="je"><tr><th>科目</th><th style="text-align:right">借方</th><th style="text-align:right">贷方</th><th>行摘要</th><th></th></tr>${rows}</table>
+        ${ctlBox}
+        <div style="margin-top:8px;display:flex;align-items:center;gap:14px">
+          <button class="expander" onclick="madd()">+ 加一行</button>
+          <span class="${bal?'conf':'delta'}">借合计 ${dr.toFixed(2)} / 贷合计 ${cr.toFixed(2)} ${bal?'✓ 平':'✗ 不平'}</span>
+          <button class="ok" ${(bal&&ctlOK)?'':'disabled style="opacity:.5;cursor:not-allowed"'} onclick="doManual()">✓ 过账</button>
+        </div>
+        <div class="muted" style="margin-top:8px;font-size:12px">规则:每行只填借或贷其一;借贷合计必须相等才可过账;含银行/现金的行必须选现金流活动;含应付/应收(往来控制账户)须确认并填对手方。</div>
+      </div></div>`;
+}
+let MDATE='', MMEMO='', MACT='', MCTL=false, MCP='';
+const CONTROL_CODES = ['2100','1100'];   // 应付账款 / 应收账款（与 ledger.accounts.CONTROL_ACCOUNTS 对应）
+function isControlAcct(a){ return CONTROL_CODES.includes(String(a||'').trim().split(/\s+/)[0]); }
+function mset(i,k,v){ MROWS[i][k]=v; renderManual(); }
+function madd(){ MROWS.push({}); renderManual(); }
+function mdel(i){ if(MROWS.length>2){ MROWS.splice(i,1); renderManual(); } }
+async function doManual(){
+  if(!MDATE){ alert('请填记账日期'); return; }
+  const lines = MROWS.filter(r=>r.account||r.debit||r.credit)
+    .map(r=>({account:r.account,debit:r.debit||undefined,credit:r.credit||undefined,memo:r.memo||undefined}));
+  const r = await postJSON('/api/ledger/manual', {lines, date:MDATE, memo:MMEMO, activity:MACT||undefined,
+    allow_control:MCTL||undefined, counterparty:MCP||undefined});
+  if(r&&r.entry_no){ alert('已过账,凭证号 '+r.entry_no); MROWS=[{},{}]; MMEMO=''; MACT=''; MCTL=false; MCP=''; await loadSummary(); render(); }
+}
+
 async function renderTrial(){
   const d = await getJSON('/api/ledger/trial-balance');
   const rows = d.rows||[];
@@ -228,12 +531,132 @@ async function renderTrial(){
   }
   h += `<tr class="tbfoot"><td>合计</td><td class="num">${esc(d.total_debit)}</td><td class="num">${esc(d.total_credit)}</td></tr>`;
   h += '</table></div>';
+  // 期末关账面板
+  let pd = {}; try{ pd = await getJSON('/api/ledger/periods'); }catch(e){}
+  const ps = pd.periods||[];
+  if(ps.length){
+    h += '<div class="tbcard"><table class="je"><tr><th>会计期间</th><th>状态</th><th style="text-align:right">结转净利</th><th></th></tr>';
+    for(const p of ps){
+      const closed = p.status==='closed';
+      const act = closed
+        ? `<button class="no" onclick="doReopen('${esc(p.period)}')">↩ 重开</button>`
+        : `<button class="ok" onclick="doClose('${esc(p.period)}')">🔒 关账并结转</button>`;
+      h += `<tr><td>${esc(p.period)}</td>
+        <td>${closed?'<span class="conf">已关账</span>':'<span class="muted">开放</span>'}</td>
+        <td class="num">${closed?esc(p.net_income||''):''}</td><td>${act}</td></tr>`;
+    }
+    h += '</table><div class="muted" style="padding:6px 14px;font-size:12px">关账=结转损益(损益→未分配利润)+锁定该期,之后不能再向该期过账;可重开(红冲结转)。关账是人工动作。</div></div>';
+  }
   document.getElementById('body').innerHTML = h;
+}
+async function doClose(period){
+  if(!confirm('确认关账 '+period+' ?将结转该期损益到未分配利润并锁定该期(之后不能再向该期过账,可重开)。')) return;
+  const r = await postJSON('/api/ledger/close', {period});
+  if(r&&r.period){ alert('已关账 '+period+',结转净利 '+r.net_income); await loadSummary(); render(); }
+}
+async function doReopen(period){
+  if(!confirm('确认重开 '+period+' ?将红冲该期结转分录、解锁该期。')) return;
+  const r = await postJSON('/api/ledger/reopen', {period});
+  if(r&&r.period){ alert('已重开 '+period); await loadSummary(); render(); }
+}
+
+// ---- 期初建账 ----
+let OP_ITEMS = [{dir:'AR'},{dir:'AP'}];   // 往来:应收/应付逐户
+let OP_OTHER = [{side:'debit'},{side:'credit'}];   // 其它科目余额
+let OP_DATE = '';
+let OP_IMPORT = null;    // 批量导入预览结果 {items,other_lines,errors}
+function opImportBlock(){
+  let imp = '';
+  if(OP_IMPORT){
+    const e = OP_IMPORT.errors||[];
+    imp = `<div style="margin-top:10px">解析：往来 <b>${(OP_IMPORT.items||[]).length}</b> 户，其它 <b>${(OP_IMPORT.other_lines||[]).length}</b> 行`;
+    if(e.length){ imp += `　<b class="bad">${e.length} 处错误</b><ul class="muted" style="font-size:12px;margin:6px 0">`+
+        e.map(x=>`<li>第 ${x.row} 行：${esc(x.msg)}</li>`).join('')+`</ul><div class="bad" style="font-size:12px">请修正后重新预览；有错误时不导入。</div>`; }
+    else { imp += `　<span style="color:#137333">校验通过</span><div style="margin-top:8px"><button class="ok" onclick="doOpeningImport(true)">✓ 确认导入并建账</button></div>`; }
+    imp += '</div>';
+  }
+  return `<div class="card"><div class="chead"><span class="no">批量导入期初余额（Excel / CSV）</span>
+      <span class="memo">一行一科目 · 往来须填对手方 · 其它须注明借/贷</span></div>
+      <div style="padding:12px 14px">
+        <input type="file" id="op-file" accept=".xlsx,.csv,.txt">
+        <button class="expander" onclick="doOpeningImport(false)">预览</button>
+        <span class="muted" style="font-size:12px">列：科目、借方/贷方（或 金额+方向）、对手方（往来必填）、摘要。往来控制账户逐户成单、可在「待结算」清旧账。</span>
+        ${imp}
+      </div></div>`;
+}
+async function doOpeningImport(commit){
+  const f = document.getElementById('op-file');
+  if(!f || !f.files || !f.files[0]){ alert('请先选择 Excel/CSV 文件'); return; }
+  const fd = new FormData();
+  fd.append('file', f.files[0]); fd.append('dry_run', commit?'0':'1');
+  if(OP_DATE) fd.append('date', OP_DATE);
+  let d = null;
+  try{
+    const r = await fetch('/api/ledger/opening-import', {method:'POST', body:fd});
+    d = await r.json();
+    if(!r.ok){ alert('导入失败'+((d&&d.error)?('：'+d.error):('（HTTP '+r.status+'）'))); return; }
+  }catch(e){ alert('网络错误：'+e); return; }
+  if(commit){
+    if(d.entry_nos){ alert('批量建账完成，共 '+d.entry_nos.length+' 张分录；年初留存(3200)='+d.opening_retained);
+      OP_IMPORT=null; await loadSummary(); render(); }
+  }else{ OP_IMPORT=d; renderOpening(); }
+}
+async function renderOpening(){
+  if(!ACCOUNTS.length){ try{ ACCOUNTS=(await getJSON('/api/ledger/accounts')).accounts||[]; }catch(e){} }
+  const accOpts = ACCOUNTS.map(a=>`<option value="${esc(a.account)}">${esc(a.account)}</option>`).join('');
+  const itemRows = OP_ITEMS.map((r,i)=>`<tr>
+    <td><select onchange="opSet('item',${i},'dir',this.value)">
+      <option value="AR"${r.dir==='AR'?' selected':''}>应收(客户欠我)</option>
+      <option value="AP"${r.dir==='AP'?' selected':''}>应付(我欠供应商)</option></select></td>
+    <td><input placeholder="对手方" value="${esc(r.counterparty||'')}" oninput="opSet('item',${i},'counterparty',this.value)" style="width:160px"></td>
+    <td><input type="text" inputmode="decimal" placeholder="金额" value="${esc(r.amount||'')}" oninput="opSet('item',${i},'amount',this.value)" style="width:110px;text-align:right"></td>
+    <td>${OP_ITEMS.length>1?`<button class="no" style="padding:3px 9px" onclick="opDel('item',${i})">✕</button>`:''}</td></tr>`).join('');
+  const otherRows = OP_OTHER.map((r,i)=>`<tr>
+    <td><select onchange="opSet('other',${i},'account',this.value)" style="min-width:220px"><option value="">— 科目 —</option>${accOpts.replace('value="'+esc(r.account||'')+'"','value="'+esc(r.account||'')+'" selected')}</select></td>
+    <td><select onchange="opSet('other',${i},'side',this.value)">
+      <option value="debit"${r.side==='debit'?' selected':''}>借方(资产类)</option>
+      <option value="credit"${r.side==='credit'?' selected':''}>贷方(负债/权益类)</option></select></td>
+    <td><input type="text" inputmode="decimal" placeholder="金额" value="${esc(r.amount||'')}" oninput="opSet('other',${i},'amount',this.value)" style="width:110px;text-align:right"></td>
+    <td>${OP_OTHER.length>1?`<button class="no" style="padding:3px 9px" onclick="opDel('other',${i})">✕</button>`:''}</td></tr>`).join('');
+  document.getElementById('body').innerHTML = opImportBlock() + `
+    <div class="card"><div class="chead"><span class="no">期初建账（接手既有账套的起点）</span>
+      <span class="memo">往来逐户录（可结算旧账）· 其它科目录余额 · 对方科目统一未分配利润</span></div>
+      <div style="padding:12px 14px">
+        <label class="muted">期初日期 <input id="op-date" type="date" value="${esc(OP_DATE)}" oninput="OP_DATE=this.value"></label>
+        <h4 style="margin:14px 0 4px;color:#425466">① 期初往来（逐户，之后可在「待结算」清旧账）</h4>
+        <table class="je"><tr><th>类型</th><th>对手方</th><th style="text-align:right">金额</th><th></th></tr>${itemRows}</table>
+        <button class="expander" onclick="opAdd('item')">+ 加一户</button>
+        <h4 style="margin:16px 0 4px;color:#425466">② 其它科目期初余额（银行/固定资产/实收资本/应交税费…）</h4>
+        <table class="je"><tr><th>科目</th><th>方向</th><th style="text-align:right">金额</th><th></th></tr>${otherRows}</table>
+        <button class="expander" onclick="opAdd('other')">+ 加一行</button>
+        <div style="margin-top:14px"><button class="ok" onclick="doOpening()">✓ 建账（过账期初）</button></div>
+        <div class="muted" style="margin-top:8px;font-size:12px">建账应在录业务前做。每条各成一张 opening 分录、对方科目=未分配利润(3200);建账后 3200 = 年初留存(净资产−实收资本),请核对。期初现金计入现金流量表期初、不算本期流量。</div>
+      </div></div>`;
+}
+const AR_ACC='1100 应收账款 Accounts Receivable', AP_ACC='2100 应付账款 Accounts Payable';
+function opSet(g,i,k,v){ (g==='item'?OP_ITEMS:OP_OTHER)[i][k]=v; renderOpening(); }
+function opAdd(g){ (g==='item'?OP_ITEMS:OP_OTHER).push(g==='item'?{dir:'AR'}:{side:'debit'}); renderOpening(); }
+function opDel(g,i){ const a=(g==='item'?OP_ITEMS:OP_OTHER); if(a.length>1){ a.splice(i,1); renderOpening(); } }
+async function doOpening(){
+  if(!OP_DATE){ alert('请填期初日期'); return; }
+  const items = OP_ITEMS.filter(r=>r.counterparty||r.amount)
+    .map(r=>({account:r.dir==='AR'?AR_ACC:AP_ACC, counterparty:r.counterparty, amount:r.amount}));
+  const other = OP_OTHER.filter(r=>r.account||r.amount)
+    .map(r=>({account:r.account, amount:r.amount, side:r.side}));
+  if(!items.length && !other.length){ alert('至少录一条'); return; }
+  const r = await postJSON('/api/ledger/opening', {items, other_lines:other, date:OP_DATE});
+  if(r&&r.entry_nos){ alert('建账完成,共 '+r.entry_nos.length+' 张分录;年初留存(3200)='+r.opening_retained);
+    OP_ITEMS=[{dir:'AR'},{dir:'AP'}]; OP_OTHER=[{side:'debit'},{side:'credit'}]; await loadSummary(); render(); }
 }
 
 function render(){
   if(CUR==='postable') return renderPostable();
   if(CUR==='open') return renderOpen();
+  if(CUR==='statement') return renderStatement();
+  if(CUR==='bankrecon') return renderBankRecon();
+  if(CUR==='fx') return renderFx();
+  if(CUR==='manual') return renderManual();
+  if(CUR==='opening') return renderOpening();
   if(CUR==='entries') return renderEntries();
   return renderTrial();
 }

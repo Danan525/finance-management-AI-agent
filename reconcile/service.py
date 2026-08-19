@@ -313,6 +313,88 @@ def confirm_batch(category: str = "auto", by: str = "reviewer") -> dict:
             "skipped_need_review": skipped_need_review, "category": category}
 
 
+# ---- 手工匹配：把未自动配上的流水人工关联到一张发票 ------------------------
+def _cand_brief(h: str, tag: str, used_inv: set) -> Optional[dict]:
+    inv = db.get_invoice(h)
+    if inv is None:
+        return None
+    td = inv.f("total_due").value
+    return {"file_hash": h,
+            "invoice_no": inv.f("invoice_no").value or "",
+            "issuer": inv.f("issuer_name").value or "",
+            "date": inv.f("invoice_date").value or "",
+            "total_due": ("" if td in (None, "") else str(td)),
+            "currency": inv.f("currency_settlement").value or "",
+            "approved": (inv.approve_status or "") == "Approved",
+            "reconciled_elsewhere": h in used_inv,
+            "group": tag}
+
+
+def manual_match_candidates(stmt_hash: str, index: int, q: str = "", limit: int = 40) -> dict:
+    """未匹配流水手工选发票的候选：**未匹配发票（在待定队列、单边只有发票）优先**；
+    给了关键词再**搜全部已提取发票**（发票号/供应商/金额）。每条带是否已审核、是否已在别处对账，供防呆。"""
+    used_inv, _u = db.confirmed_member_refs()
+    out, seen = [], set()
+    for m in db.list_matches(category="unmatched", status="proposed"):
+        if m["invoices"] and not m["txns"]:
+            for h in m["invoices"]:
+                if h in seen:
+                    continue
+                b = _cand_brief(h, "unmatched", used_inv)
+                if b:
+                    out.append(b); seen.add(h)
+    ql = (q or "").strip().lower()
+    if ql:
+        for h, inv in db.load_all_invoices().items():
+            if h in seen or (getattr(inv, "doc_type", "invoice") or "invoice") != "invoice":
+                continue
+            hay = " ".join([str(inv.f("invoice_no").value or ""), str(inv.f("issuer_name").value or ""),
+                            str(inv.f("total_due").value or "")]).lower()
+            if ql in hay:
+                b = _cand_brief(h, "search", used_inv)
+                if b:
+                    out.append(b); seen.add(h)
+    return {"candidates": out[:limit], "truncated": len(out) > limit, "total": len(out)}
+
+
+def manual_match(stmt_hash: str, index: int, invoice_hash: str, by: str = "reviewer") -> dict:
+    """人工把一笔未匹配流水关联到一张发票：建 1:1 proposed 匹配 → 复用 `confirm_match`（全套护栏：
+    发票未审核→跳去审核、防重复成员、竞态）。成功建后清掉这两成员遗留的单边未匹配 proposed 记录。"""
+    stmt = db.get_invoice(stmt_hash)
+    if stmt is None or (getattr(stmt, "doc_type", "") or "") != "statement":
+        return {"ok": False, "message": "未找到该银行流水。"}
+    if index < 0 or index >= len(stmt.transactions or []):
+        return {"ok": False, "message": "流水交易下标越界。"}
+    inv = db.get_invoice(invoice_hash)
+    if inv is None or (getattr(inv, "doc_type", "invoice") or "invoice") != "invoice":
+        return {"ok": False, "message": "未找到该发票。"}
+    used_inv, used_txn = db.confirmed_member_refs()
+    if invoice_hash in used_inv:
+        return {"ok": False, "message": "该发票已在另一笔已确认对账里，不能重复对应。"}
+    if (stmt_hash, index) in used_txn:
+        return {"ok": False, "message": "这笔流水已在另一笔已确认对账里，不能重复对应。"}
+    tx = stmt.transactions[index]
+    amt = tx.expense if tx.expense not in (None, "") else tx.income
+    td = inv.f("total_due").value
+    proposal = {"invoices": [invoice_hash], "txns": [(stmt_hash, index)],
+                "category": "confirm", "match_type": "1:1（手工）", "match_score": 100,
+                "currency": (inv.f("currency_settlement").value or None),
+                "invoice_total": (None if td in (None, "") else str(td)),
+                "matched_total": (None if amt in (None, "") else str(amt)),
+                "amount_delta": None, "basis": ["人工指定匹配（未自动配上）"],
+                "status": "proposed", "created_at": _now()}
+    mid = db.save_match(proposal)
+    if not mid:
+        return {"ok": False, "message": "该发票与这笔流水的匹配已存在，请在列表中确认。"}
+    for m in db.list_matches(status="proposed"):     # 清残留单边未匹配（新配对已代表它们）
+        if m["id"] != mid and not (m["invoices"] and m["txns"]) \
+                and (invoice_hash in m["invoices"] or (stmt_hash, index) in m["txns"]):
+            db.delete_match(m["id"])
+    res = confirm_match(mid, by)          # 复用护栏：未审核发票→needs_invoice_review；否则直接结算
+    res["match_id"] = mid
+    return res
+
+
 def reject_match(match_id: int, by: str = "reviewer") -> dict:
     """拒绝一条匹配（对应关系不成立）。成员回到候选池，下次 run_matching 重新参与。"""
     m = db.get_match(match_id)
@@ -472,3 +554,45 @@ def _amt_variants(amt_str: str) -> list:
 
 def _s(v):
     return None if v is None else str(v)
+
+
+def matched_cash_for_invoice(invoice_hash: str) -> Optional[dict]:
+    """该发票若有**已确认**对账匹配,返回其对应银行交易的现金合计 + 日期(供总账"据对账结算")。
+
+    连接 reconcile → ledger 结算(计划 §3.3 第二段"从流水检索候选→对照"的落点):
+    已确认 match → 其 txn 成员 → 流水 file_hash + txn_index → 交易金额(支出优先取 expense,否则 income)。
+    无已确认匹配 / 取不到金额 → None。
+    """
+    from decimal import Decimal
+    Z = Decimal("0")
+    with db.connect() as c:
+        row = c.execute(
+            "SELECT m.id AS mid FROM matches m JOIN match_members mm ON mm.match_id = m.id "
+            "WHERE m.status='confirmed' AND mm.kind='invoice' AND mm.invoice_hash=? LIMIT 1",
+            (invoice_hash,)).fetchone()
+        if not row:
+            return None
+        txns = c.execute(
+            "SELECT invoice_hash AS sh, txn_index AS ti FROM match_members "
+            "WHERE match_id=? AND kind='txn'", (row["mid"],)).fetchall()
+    from ledger import store as _lstore          # 局部导入避免层次循环
+    total, dates, n = Z, [], 0
+    already_posted = False
+    for t in txns:
+        stmt = db.get_invoice(t["sh"])
+        i = t["ti"]
+        if stmt and i is not None and 0 <= i < len(stmt.transactions or []):
+            tx = stmt.transactions[i]
+            amt = tx.expense if (tx.expense is not None and tx.expense != Z) else tx.income
+            if amt is not None:
+                total += amt
+                n += 1
+                if tx.date:
+                    dates.append(tx.date)
+            # H2 护栏：该流水若已作【非发票流水入账】，据对账结算会让同一笔现金二次入账
+            if _lstore.existing_posted("statement", "%s#%s" % (t["sh"], i)):
+                already_posted = True
+    if total <= Z or n == 0:
+        return None
+    return {"cash": str(total), "date": (max(dates) if dates else ""),
+            "txn_count": n, "already_posted": already_posted}

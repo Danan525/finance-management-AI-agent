@@ -1,0 +1,13 @@
+{
+  "_README": "关键过账科目角色覆盖。不同辖区/企业 COA 编码不同时，把角色映射到自己的科目（须在科目表 chart 里、带编码）。借贷结构仍在代码（会计恒等，不配置）。另存为 posting_accounts.json 生效。CONTROL_CODES 从 AP/AR 自动推导。未列出的角色用内置默认。",
+  "AP": "2100 应付账款 Accounts Payable",
+  "AR": "1100 应收账款 Accounts Receivable",
+  "BANK": "1002 银行存款 Bank",
+  "REVENUE": "4000 营业收入 Sales Revenue",
+  "INPUT_TAX": "1180 进项税额 Input Tax",
+  "OUTPUT_TAX": "2210 销项税额 Output Tax",
+  "FEE": "6603 财务费用-手续费 Bank/Platform Fees",
+  "EXCHANGE_GL": "6607 汇兑损益 FX Gain/Loss",
+  "CY_PROFIT": "3300 本年利润 Current-Year Profit",
+  "RETAINED": "3200 未分配利润 Retained Earnings"
+}

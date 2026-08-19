@@ -79,6 +79,37 @@ class ReviewWebTest(unittest.TestCase):
         r = self.c.post("/api/review/h1/action", json={"action": "Rejected"})
         self.assertEqual(r.status_code, 400)
 
+    def test_statement_page_image_renders_without_original_file(self):
+        # 结构化流水（有逐笔交易、无原始文件，如 CSV 导入）也应能预览：
+        # /api/review/<hash>/page/0 渲染规范交易表，而非因缺原件 404。
+        # 用途：总账「流水入账」卡片「预览原件」按钮对 CSV 流水也可用。
+        from core.models import Transaction
+        st = Invoice(file_name="stmt.csv", file_hash="stmt1")
+        st.doc_type = "statement"
+        st.approve_status = "Pending"
+        t = Transaction(); t.date = "2026-06-01"; t.description = "Bank fee"; t.expense = "12.50"
+        st.transactions = [t]
+        db.save_invoice(st)
+        r = self.c.get("/api/review/stmt1/page/0")
+        self.assertEqual(r.status_code, 200)                 # 不再因无原件 404
+        self.assertEqual(r.headers.get("content-type"), "image/png")
+        self.assertGreater(len(r.content), 100)
+
+    def test_postable_endpoint_serializes_decimal_total_due(self):
+        # 回归：total_due 的 FieldValue.value 是 Decimal 时，/api/ledger/postable 曾整条 500
+        # （手搓 dict 塞原始 Decimal → JSONResponse 无法序列化），前端 getJSON 吞错→列表空，
+        # 于是"顶栏待入账(发票) N、点进去却空"。须 200 且 total_due 为字符串。
+        r = self.c.post("/api/review/h1/action", json={"action": "Approved", "by": "bob"})
+        self.assertEqual(r.status_code, 200)
+        rp = self.c.get("/api/ledger/postable")
+        self.assertEqual(rp.status_code, 200)                 # 不再 500
+        invs = rp.json()["invoices"]
+        self.assertEqual(len(invs), 1)
+        self.assertEqual(invs[0]["total_due"], "100.00")      # Decimal → 字符串
+        self.assertIsInstance(invs[0]["total_due"], str)
+        # 顶栏计数与列表一致（同为 1，不再"数字有、列表空"）
+        self.assertEqual(self.c.get("/api/ledger/summary").json()["postable"], 1)
+
     def test_fix_first_orders_needs_fix_to_front(self):
         # 干净发票 h1（较新上传）→ 通过校验；再造一条较旧的"需纠错"发票（缺必填 total_due）
         good = db.get_invoice("h1")
