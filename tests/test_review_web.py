@@ -3,7 +3,9 @@
 验证：/review 返回审核页 HTML；/api/review/* 队列→详情→改字段→动作 一条龙可达。
 若环境缺 TestClient 依赖（httpx），整组跳过（不影响其余测试）。
 """
+import re
 import shutil
+import subprocess
 import tempfile
 import unittest
 from decimal import Decimal
@@ -46,6 +48,43 @@ class ReviewWebTest(unittest.TestCase):
         r = self.c.get("/review")
         self.assertEqual(r.status_code, 200)
         self.assertIn("人工审核", r.text)
+
+    def test_newcomer_tour_is_injected_on_main_pages(self):
+        """互动新手教程：模拟全流程、当前动作完成后才解锁下一步。"""
+        from gateway.main import _TOUR_HTML
+
+        for path in ("/", "/review"):
+            r = self.c.get(path)
+            self.assertEqual(r.status_code, 200)
+            self.assertIn('id="onboarding-tour"', r.text)
+            self.assertIn('id="tour-skip"', r.text)
+            self.assertIn("跳过教程", r.text)
+            self.assertIn("互动新手教程", r.text)
+            self.assertIn("finance:onboarding:v2:", r.text)
+            self.assertIn('data-tour="review"', r.text)
+            self.assertIn('data-tour-action="upload_invoice"', r.text)
+            self.assertIn("学习发生在审核过程中", r.text)
+            self.assertIn("不会上传文件，不会写数据库", r.text)
+            self.assertIn("next.disabled", r.text)
+
+        self.assertEqual(_TOUR_HTML.count(",action:'"), 14)
+        self.assertLess(_TOUR_HTML.index("学习发生在审核过程中"),
+                        _TOUR_HTML.index("运行发票与流水自动匹配"))
+        self.assertNotIn("/api/", _TOUR_HTML)
+        self.assertNotIn("fetch(", _TOUR_HTML)
+
+    @unittest.skipUnless(shutil.which("node"), "缺 Node.js，跳过教程脚本语法检查")
+    def test_newcomer_tour_javascript_syntax(self):
+        """抽出教程内联脚本交给 Node 解析，防长流程 HTML/JS 改坏整页。"""
+        from gateway.main import _TOUR_HTML
+
+        scripts = re.findall(r"<script>(.*?)</script>", _TOUR_HTML, re.S)
+        self.assertEqual(len(scripts), 1)
+        result = subprocess.run(
+            [shutil.which("node"), "--check", "-"],
+            input=scripts[0], text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_upload_rejects_unsupported_ext(self):
         """扩展名白名单：真·垃圾类型（.exe）落盘前即拒，不进处理、不写盘。"""

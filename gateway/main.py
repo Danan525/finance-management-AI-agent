@@ -108,34 +108,347 @@ _NAV_CSS = """<style>
     padding:9px 13px;border-radius:8px;white-space:nowrap;line-height:1}
   .appnav a.navlink:hover{background:rgba(255,255,255,.13);color:#fff}
   .appnav a.navlink.on{background:#fff;color:#12325a}
+  .appnav .tour-launch{margin-left:auto;border:1px solid rgba(255,255,255,.38);background:rgba(255,255,255,.08);
+    color:#fff;border-radius:8px;padding:7px 11px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .appnav .tour-launch:hover{background:rgba(255,255,255,.18)}
   /* 页面自带 header 不再各自 sticky，避免与全局导航叠压 */
   body > header{position:static !important}
+</style>"""
+
+_TOUR_CSS = """<style>
+  #onboarding-tour[hidden]{display:none}
+  #onboarding-tour{position:fixed;inset:0;z-index:10000;pointer-events:auto;
+    font-family:-apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif}
+  #onboarding-tour .tour-spot{position:fixed;border:3px solid #60a5fa;border-radius:12px;
+    box-shadow:0 0 0 9999px rgba(8,18,36,.76),0 0 0 6px rgba(96,165,250,.2);
+    transition:left .18s ease,top .18s ease,width .18s ease,height .18s ease;pointer-events:none}
+  #onboarding-tour .tour-card{position:fixed;width:min(720px,calc(100vw - 28px));max-height:calc(100vh - 24px);
+    overflow:auto;background:#fff;color:#1f2937;border-radius:16px;padding:18px 20px 16px;
+    box-shadow:0 20px 65px rgba(0,0,0,.42);pointer-events:auto}
+  #onboarding-tour .tour-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+  #onboarding-tour .tour-count{color:#1f4e78;font-size:12px;font-weight:800;letter-spacing:.04em}
+  #onboarding-tour .tour-skip{border:0;background:transparent;color:#64748b;font-size:13px;font-weight:600;
+    padding:4px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+  #onboarding-tour .tour-card h2{font-size:20px;line-height:1.35;margin:0 0 6px;color:#12325a}
+  #onboarding-tour .tour-card>p{font-size:14px;line-height:1.65;margin:0;white-space:pre-line;color:#475569}
+  #onboarding-tour .tour-safe{margin:10px 0;padding:8px 11px;border-radius:8px;background:#ecfdf5;
+    color:#166534;font-size:12.5px;font-weight:650;border:1px solid #bbf7d0}
+  #onboarding-tour .tour-demo{margin-top:12px;min-height:180px;padding:14px;background:#f8fafc;
+    border:1px solid #dbe4ee;border-radius:12px;color:#334155}
+  #onboarding-tour .tour-task{margin-top:10px;padding:9px 12px;border-radius:8px;background:#fff7ed;
+    border:1px solid #fed7aa;color:#9a3412;font-size:13px;font-weight:700}
+  #onboarding-tour .tour-task.done{background:#ecfdf5;border-color:#bbf7d0;color:#166534}
+  #onboarding-tour .tour-progress{height:4px;background:#e2e8f0;border-radius:9px;margin:13px 0 12px;overflow:hidden}
+  #onboarding-tour .tour-progress span{display:block;height:100%;background:#2563eb;border-radius:9px;transition:width .2s ease}
+  #onboarding-tour .tour-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px}
+  #onboarding-tour .tour-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:8px;
+    padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer}
+  #onboarding-tour .tour-btn:hover{background:#f8fafc}
+  #onboarding-tour .tour-next{border-color:#1f4e78;background:#1f4e78;color:#fff;min-width:92px}
+  #onboarding-tour .tour-next:hover{background:#163a5a}
+  #onboarding-tour .tour-next:disabled{background:#94a3b8;border-color:#94a3b8;cursor:not-allowed}
+  #onboarding-tour .tour-prev[hidden]{display:none}
+  #onboarding-tour .sim-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  #onboarding-tour .sim-tab,#onboarding-tour .sim-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;
+    border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer}
+  #onboarding-tour .sim-tab.on,#onboarding-tour .sim-btn.primary{background:#1f4e78;border-color:#1f4e78;color:#fff}
+  #onboarding-tour [data-tour-action]{position:relative;box-shadow:0 0 0 3px rgba(245,158,11,.26);animation:tourPulse 1.35s infinite}
+  #onboarding-tour [data-tour-action]:hover{transform:translateY(-1px)}
+  #onboarding-tour [data-tour-action].is-done{background:#15803d!important;border-color:#15803d!important;
+    color:#fff!important;animation:none;box-shadow:none;cursor:default;transform:none}
+  #onboarding-tour .sim-upload{border:2px dashed #94a3b8;border-radius:10px;background:#fff;padding:22px;text-align:center}
+  #onboarding-tour .sim-file{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;margin:6px 0;
+    border:1px solid #cbd5e1;border-radius:7px;background:#fff;font-size:12.5px}
+  #onboarding-tour .sim-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  #onboarding-tour .sim-panel{background:#fff;border:1px solid #dbe4ee;border-radius:9px;padding:11px}
+  #onboarding-tour .sim-panel h4{margin:0 0 8px;color:#1f4e78;font-size:13px}
+  #onboarding-tour .sim-doc{background:#fffdf7;border:1px solid #e7dcc2;border-radius:6px;padding:10px;
+    font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
+  #onboarding-tour .sim-field{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:7px 8px;border-bottom:1px solid #edf2f7;font-size:12.5px}
+  #onboarding-tour .sim-field:last-child{border-bottom:0}
+  #onboarding-tour .sim-warn{color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px}
+  #onboarding-tour .sim-ok{color:#166534;background:#ecfdf5;border:1px solid #bbf7d0;border-radius:6px;padding:6px 8px}
+  #onboarding-tour .sim-table{width:100%;border-collapse:collapse;background:#fff;font-size:12px}
+  #onboarding-tour .sim-table th,#onboarding-tour .sim-table td{padding:7px 8px;border-bottom:1px solid #e2e8f0;text-align:left}
+  #onboarding-tour .sim-table th{background:#eef2f7}
+  #onboarding-tour .sim-badge{display:inline-block;padding:2px 7px;border-radius:99px;background:#e0e7ff;
+    color:#3730a3;font-size:11px;font-weight:700}
+  #onboarding-tour .sim-flow{display:flex;align-items:center;justify-content:center;gap:7px;flex-wrap:wrap;padding:16px 4px}
+  #onboarding-tour .sim-flow span{padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #cbd5e1;font-size:12px;font-weight:700}
+  #onboarding-tour .sim-flow b{color:#64748b}
+  #onboarding-tour .sim-reveal{display:none;margin-top:9px}
+  #onboarding-tour .sim-reveal.show{display:block}
+  #onboarding-tour .sim-amount{font-variant-numeric:tabular-nums;font-weight:800}
+  @keyframes tourPulse{50%{box-shadow:0 0 0 6px rgba(245,158,11,.12)}}
+  @media(max-width:760px){
+    .appnav .tour-launch{margin-left:2px}
+    #onboarding-tour .tour-card{padding:14px;max-height:calc(100vh - 12px)}
+    #onboarding-tour .tour-demo{padding:10px;min-height:150px}
+    #onboarding-tour .sim-grid{grid-template-columns:1fr}
+  }
+  @media(prefers-reduced-motion:reduce){
+    #onboarding-tour .tour-spot,#onboarding-tour .tour-progress span{transition:none}
+    #onboarding-tour [data-tour-action]{animation:none}
+  }
 </style>"""
 
 _NAV_HTML = """<nav class="appnav" id="appnav"></nav>
 <script>(function(){
   var B = window.APP_BASE || '';
-  var M = [["/","🏠 上传识别"],["/review","📝 审核"],["/reconcile","🔗 对账"],
-           ["/ledger","📒 总账"],["/reports","📊 报表"],["/counterparties","🏢 对手方"],
-           ["/learned","🧠 学习规则"],
-           ["/help","📖 使用说明"]];
+  var M = [["/","🏠 上传识别","upload"],["/review","📝 审核","review"],
+           ["/reconcile","🔗 对账","reconcile"],["/ledger","📒 总账","ledger"],
+           ["/reports","📊 报表","reports"],["/counterparties","🏢 对手方","counterparties"],
+           ["/learned","🧠 学习规则","learned"],["/help","📖 使用说明","help"]];
   var p = location.pathname;
   if (B && p.indexOf(B) === 0) p = p.slice(B.length) || '/';
   function on(path){ return path === '/' ? (p === '/' || p === '') : (p === path || p.indexOf(path + '/') === 0 || p === path); }
   var html = '<a class="brand" href="' + B + '/">💰 财务系统</a>';
   html += M.map(function(it){
     var tgt = it[0] === '/help' ? ' target="_blank"' : '';
-    return '<a class="navlink' + (on(it[0]) ? ' on' : '') + '" href="' + B + it[0] + '"' + tgt + '>' + it[1] + '</a>';
+    return '<a class="navlink' + (on(it[0]) ? ' on' : '') + '" data-tour="' + it[2]
+      + '" href="' + B + it[0] + '"' + tgt + '>' + it[1] + '</a>';
   }).join('');
+  html += '<button type="button" class="tour-launch" id="tour-launch">❔ 新手教程</button>';
   document.getElementById('appnav').innerHTML = html;
+})();</script>"""
+
+_TOUR_HTML = """<div id="onboarding-tour" hidden>
+  <div class="tour-spot" id="tour-spot" aria-hidden="true"></div>
+  <section class="tour-card" id="tour-card" role="dialog" aria-modal="true" aria-labelledby="tour-title" aria-describedby="tour-copy">
+    <div class="tour-top">
+      <span class="tour-count" id="tour-count"></span>
+      <button type="button" class="tour-skip" id="tour-skip">跳过教程</button>
+    </div>
+    <h2 id="tour-title"></h2>
+    <p id="tour-copy"></p>
+    <div class="tour-safe">🧪 以下均为教程模拟：不会上传文件，不会写数据库，也不会产生真实分录或报表。</div>
+    <div class="tour-demo" id="tour-demo" aria-live="polite"></div>
+    <div class="tour-task" id="tour-task" role="status"></div>
+    <div class="tour-progress" aria-hidden="true"><span id="tour-progress"></span></div>
+    <div class="tour-actions">
+      <button type="button" class="tour-btn tour-prev" id="tour-prev">上一步</button>
+      <button type="button" class="tour-btn tour-next" id="tour-next">下一步</button>
+    </div>
+  </section>
+</div>
+<script>(function(){
+  var root=document.getElementById('onboarding-tour');
+  var card=document.getElementById('tour-card');
+  var spot=document.getElementById('tour-spot');
+  var title=document.getElementById('tour-title');
+  var copy=document.getElementById('tour-copy');
+  var demo=document.getElementById('tour-demo');
+  var task=document.getElementById('tour-task');
+  var count=document.getElementById('tour-count');
+  var progress=document.getElementById('tour-progress');
+  var prev=document.getElementById('tour-prev');
+  var next=document.getElementById('tour-next');
+  var skip=document.getElementById('tour-skip');
+  var launch=document.getElementById('tour-launch');
+  var base=window.APP_BASE||'root';
+  var storageKey='finance:onboarding:v2:'+base;
+  var index=0,active=false,currentTarget=null,restoreFocus=null,completed=[];
+  var steps=[
+    {
+      target:['.appnav .brand'],title:'欢迎：亲手走完一笔业务',
+      copy:'你将用虚拟案例走完“发票上传 → 审核与学习 → 流水审核 → 对账 → 建档 → 入账与结算 → 报表”。',
+      task:'先看清下面的完整路线，然后点击“下一步”开始练习。',
+      demo:'<div class="sim-flow"><span>📄 发票上传</span><b>→</b><span>📝 审核时学习</span><b>→</b><span>🏦 流水审核</span><b>→</b><span>🔗 对账</span><b>→</b><span>📒 入账/结算</span><b>→</b><span>📊 报表</span></div>'
+    },
+    {
+      target:['[data-tour="upload"]'],title:'1. 上传前先选择文件类型',
+      copy:'发票和银行流水的识别字段不同，所以每次上传前都要先选对类型。我们先处理发票。',
+      task:'请点击模拟界面里的“📄 发票”。',action:'select_invoice',done:'已选择发票类型',
+      demo:'<div class="sim-toolbar"><button type="button" class="sim-tab" data-tour-action="select_invoice" data-done="已选择发票">📄 发票</button><button type="button" class="sim-tab">🏦 银行流水</button></div><div class="sim-upload">选择类型后，上传区会提示你放入对应文件。</div>'
+    },
+    {
+      target:['[data-tour="upload"]'],title:'2. 模拟上传一张发票',
+      copy:'实际使用时可以点击上传区选文件，也可以直接拖入；一次可选多份。这里使用一张虚拟 PDF。',
+      task:'请点击“模拟选择并上传”。',action:'upload_invoice',done:'虚拟发票已上传并识别',
+      demo:'<div class="sim-toolbar"><span class="sim-tab on">📄 发票</span></div><div class="sim-upload"><div class="sim-file">📎 星河办公_INV-1001.pdf · 248 KB</div><br><button type="button" class="sim-btn primary" data-tour-action="upload_invoice">模拟选择并上传</button><div class="sim-reveal sim-ok">✓ 文本提取完成 · 发现 1 张发票 · 已进入待审核队列</div></div>'
+    },
+    {
+      target:['[data-tour="review"]'],title:'3. 识别完成不等于审核通过',
+      copy:'系统会标出缺字段、金额存疑和勾稽问题。新人应先打开记录，对照原件核验，不能看到识别结果就直接入账。',
+      task:'请点击该记录的“打开审核”。',action:'open_review',done:'已进入发票审核模拟',
+      demo:'<table class="sim-table"><thead><tr><th>文件</th><th>发票号</th><th>识别总额</th><th>状态</th><th></th></tr></thead><tbody><tr><td>星河办公_INV-1001.pdf</td><td>INV-1001</td><td class="sim-amount">USD 1,208.00</td><td><span class="sim-badge">⚠ 需纠错</span></td><td><button type="button" class="sim-btn" data-tour-action="open_review">打开审核</button></td></tr></tbody></table><div class="sim-reveal sim-ok">✓ 已打开：左侧看原件，右侧看识别字段</div>'
+    },
+    {
+      target:['[data-tour="review"]'],title:'4. 对照原件修正识别字段',
+      copy:'审核页左边是原件、右边是识别字段。示例中原件总额为 1,280.00，但识别成了 1,208.00。',
+      task:'请点击橙色错误金额，把它修正为原件金额。',action:'fix_amount',done:'总金额已修正为 USD 1,280.00',
+      demo:'<div class="sim-grid"><div class="sim-panel"><h4>📄 原件</h4><div class="sim-doc">STAR OFFICE SUPPLIES<br>Invoice: INV-1001<br>Date: 2026-07-15<br><br>Office supplies&nbsp;&nbsp;1,280.00<br><b>AMOUNT DUE&nbsp;&nbsp;USD 1,280.00</b></div></div><div class="sim-panel"><h4>📝 识别字段</h4><div class="sim-field"><span>发票号</span><b>INV-1001</b></div><div class="sim-field"><span>日期</span><b>2026-07-15</b></div><div class="sim-field"><span>总金额</span><button type="button" class="sim-btn sim-warn" data-tour-action="fix_amount">USD 1,208.00 · 点此修正</button></div><div class="sim-reveal sim-ok">✓ 总额已改为 USD 1,280.00，勾稽恢复一致</div></div></div>'
+    },
+    {
+      target:['[data-tour="review"]'],title:'5. 学习发生在审核过程中',
+      copy:'你刚才的人工修正会在审核阶段形成“待确认规则”候选；系统不会擅自启用。确认字段无误后，再通过这张发票。',
+      task:'请查看新生成的候选规则，然后点击“通过审核”。',action:'approve_invoice',done:'发票已模拟通过，候选规则已保留',
+      demo:'<div class="sim-grid"><div class="sim-panel"><h4>审核结论</h4><div class="sim-ok">✓ 必填字段齐全<br>✓ 明细 + 税费 = 总额<br>✓ 原件与字段已核对</div><br><button type="button" class="sim-btn primary" data-tour-action="approve_invoice">✓ 通过审核</button></div><div class="sim-panel"><h4>🧠 审核时学到的候选规则</h4><div class="sim-warn">待确认 · 星河办公发票中，“AMOUNT DUE”附近的数字作为总金额定位线索。</div><div class="sim-reveal sim-ok">✓ 发票 Approved；规则仍是待确认，不会自动生效</div></div></div>'
+    },
+    {
+      target:['[data-tour="learned"]'],title:'6. “规则确认”页只负责决定是否启用',
+      copy:'规则已经在上一页审核时学到了。这里不是重新学习，而是由你审阅范围和内容，再决定是否让它影响以后识别。',
+      task:'请点击“启用（仅星河办公）”。',action:'enable_rule',done:'候选规则已模拟启用',
+      demo:'<div class="sim-panel"><h4>待确认规则</h4><div class="sim-field"><span>来源</span><b>审核 INV-1001 时的人工修正</b></div><div class="sim-field"><span>作用</span><b>定位总金额 AMOUNT DUE</b></div><div class="sim-field"><span>范围</span><b>仅星河办公</b></div><br><button type="button" class="sim-btn primary" data-tour-action="enable_rule">启用（仅星河办公）</button><div class="sim-reveal sim-ok">✓ 以后新上传或重新提取的星河办公发票会使用此规则</div></div>'
+    },
+    {
+      target:['[data-tour="upload"]'],title:'7. 再上传对应的银行流水',
+      copy:'发票说明“应收或应付多少”，流水证明“实际收付多少”。回到上传页，切换为银行流水类型后再上传。',
+      task:'请点击“模拟上传银行流水”。',action:'upload_statement',done:'虚拟银行流水已上传并识别',
+      demo:'<div class="sim-toolbar"><span class="sim-tab">📄 发票</span><span class="sim-tab on">🏦 银行流水</span></div><div class="sim-upload"><div class="sim-file">📎 HSBC_2026-07.csv · 36 KB</div><br><button type="button" class="sim-btn primary" data-tour-action="upload_statement">模拟上传银行流水</button><div class="sim-reveal sim-ok">✓ 识别到账户信息与 1 笔支出交易</div></div>'
+    },
+    {
+      target:['[data-tour="review"]'],title:'8. 流水也必须先审核',
+      copy:'核对交易日期、摘要、收入、支出和余额。收入/支出分列时金额都显示正数，方向由所在列决定。',
+      task:'请核对这笔支出并点击“流水审核通过”。',action:'approve_statement',done:'银行流水已模拟审核通过',
+      demo:'<table class="sim-table"><thead><tr><th>日期</th><th>摘要</th><th>收入</th><th>支出</th><th>余额</th></tr></thead><tbody><tr><td>2026-07-18</td><td>STAR OFFICE INV-1001</td><td>—</td><td class="sim-amount">1,280.00</td><td>8,720.00</td></tr></tbody></table><br><button type="button" class="sim-btn primary" data-tour-action="approve_statement">✓ 流水审核通过</button><div class="sim-reveal sim-ok">✓ 日期、摘要、方向和金额均已核对</div>'
+    },
+    {
+      target:['[data-tour="reconcile"]'],title:'9. 运行发票与流水自动匹配',
+      copy:'对账引擎用金额、日期、发票号、对手方和收付方向寻找候选，但匹配结果仍需要人确认。',
+      task:'请点击“运行自动匹配”。',action:'run_match',done:'已找到高可信匹配候选',
+      demo:'<div class="sim-panel"><h4>待处理</h4><div class="sim-field"><span>已审核发票</span><b>1 张</b></div><div class="sim-field"><span>已审核流水交易</span><b>1 笔</b></div><br><button type="button" class="sim-btn primary" data-tour-action="run_match">▶ 运行自动匹配</button><div class="sim-reveal sim-ok">✓ 找到 1 组候选 · 置信度 98% · 金额/发票号/方向一致</div></div>'
+    },
+    {
+      target:['[data-tour="reconcile"]'],title:'10. 人工确认对应关系',
+      copy:'自动匹配只是建议。你需要比较两边的发票号、日期、金额和公司，确认确实是同一笔业务。',
+      task:'请点击“确认对应关系”。',action:'confirm_match',done:'发票与流水已模拟确认对应',
+      demo:'<div class="sim-grid"><div class="sim-panel"><h4>📄 发票</h4><div class="sim-field"><span>发票号</span><b>INV-1001</b></div><div class="sim-field"><span>公司</span><b>星河办公</b></div><div class="sim-field"><span>金额</span><b>USD 1,280.00</b></div></div><div class="sim-panel"><h4>🏦 流水</h4><div class="sim-field"><span>摘要</span><b>STAR OFFICE INV-1001</b></div><div class="sim-field"><span>方向</span><b>支出</b></div><div class="sim-field"><span>金额</span><b>USD 1,280.00</b></div></div></div><br><button type="button" class="sim-btn primary" data-tour-action="confirm_match">✓ 确认对应关系</button><div class="sim-reveal sim-ok">✓ 对账已确认；相关记录进入已处理状态</div>'
+    },
+    {
+      target:['[data-tour="counterparties"]'],title:'11. 把不同写法归到同一对手方',
+      copy:'供应商名称可能有中英文、简称或公司后缀。系统只给相似候选，是否合并必须由你决定。',
+      task:'请把“STAR OFFICE SUPPLIES LTD”并入“星河办公”。',action:'merge_counterparty',done:'供应商写法已模拟归并为别名',
+      demo:'<div class="sim-panel"><h4>待建档名称：STAR OFFICE SUPPLIES LTD</h4><div class="sim-field"><span>相似已建档对手方</span><b>星河办公 · 92%</b></div><div class="sim-field"><span>本次发票</span><b>INV-1001</b></div><br><button type="button" class="sim-btn primary" data-tour-action="merge_counterparty">↳ 并入“星河办公”</button><div class="sim-reveal sim-ok">✓ 英文写法成为别名，历史可追溯</div></div>'
+    },
+    {
+      target:['[data-tour="ledger"]'],title:'12. 审核通过后人工确认入账',
+      copy:'发票先按权责发生制形成应计分录：费用增加，同时形成应付账款。系统只给草稿，绝不自动过账。',
+      task:'请核对借贷相等后点击“确认入账”。',action:'post_entry',done:'应计分录已模拟过账',
+      demo:'<table class="sim-table"><thead><tr><th>方向</th><th>科目</th><th>金额</th></tr></thead><tbody><tr><td>借</td><td>6200 办公用品费</td><td class="sim-amount">1,280.00</td></tr><tr><td>贷</td><td>2000 应付账款</td><td class="sim-amount">1,280.00</td></tr></tbody></table><br><button type="button" class="sim-btn primary" data-tour-action="post_entry">✓ 确认入账</button><div class="sim-reveal sim-ok">✓ 模拟凭证 202607-0001 · 借贷平衡</div>'
+    },
+    {
+      target:['[data-tour="ledger"]'],title:'13. 用已确认流水做资金结算',
+      copy:'发票入账时不直接动银行；实际付款后再结算，借应付账款、贷银行存款，把未结余额清零。',
+      task:'请点击“按已对账流水结算”。',action:'settle_entry',done:'应付账款已模拟结清',
+      demo:'<div class="sim-panel"><h4>INV-1001 待结算</h4><div class="sim-field"><span>票面未结</span><b>USD 1,280.00</b></div><div class="sim-field"><span>已对账付款</span><b>USD 1,280.00</b></div><div class="sim-field"><span>差额</span><b>USD 0.00</b></div><br><button type="button" class="sim-btn primary" data-tour-action="settle_entry">✓ 按已对账流水结算</button><div class="sim-reveal sim-ok">✓ 借：应付账款 1,280 · 贷：银行存款 1,280 · 未结余额 0</div></div>'
+    },
+    {
+      target:['[data-tour="reports"]'],title:'14. 勾稽通过后查看并导出报表',
+      copy:'报表来自已过账分录。资产负债、现金和科目归类等检查全部通过后，系统才允许导出。',
+      task:'请点击“模拟导出报表 Excel”。',action:'export_report',done:'报表 Excel 已完成模拟导出',
+      demo:'<div class="sim-grid"><div class="sim-panel"><h4>📊 三张报表</h4><div class="sim-field"><span>利润表</span><b>已生成</b></div><div class="sim-field"><span>资产负债表</span><b>已生成</b></div><div class="sim-field"><span>现金流量表</span><b>已生成</b></div></div><div class="sim-panel"><h4>勾稽检查</h4><div class="sim-ok">✓ 资产 = 负债 + 权益<br>✓ 期末现金一致<br>✓ 科目归类完整</div></div></div><br><button type="button" class="sim-btn primary" data-tour-action="export_report">⬇ 模拟导出报表 Excel</button><div class="sim-reveal sim-ok">✓ 模拟下载完成；真实导出会包含报表、科目余额与凭证轨迹</div>'
+    },
+    {
+      target:['#tour-launch','[data-tour="help"]'],title:'练习完成：你已经走完整个闭环',
+      copy:'真实操作时始终遵守三条线：识别后先审核、学习规则须人工启用、入账/结算/关账都须人工确认。',
+      task:'点击“完成”退出。以后可随时从顶部“❔ 新手教程”重新练习。',
+      demo:'<div class="sim-flow"><span>✓ 发票审核</span><b>→</b><span>✓ 审核时学习</span><b>→</b><span>✓ 流水审核</span><b>→</b><span>✓ 对账</span><b>→</b><span>✓ 入账结算</span><b>→</b><span>✓ 报表</span></div><div class="sim-ok" style="text-align:center">教程使用的虚拟文件和金额均未写入系统。</div>'
+    }
+  ];
+  function remember(value){try{localStorage.setItem(storageKey,value);}catch(e){}}
+  function seen(){try{return !!localStorage.getItem(storageKey);}catch(e){return false}}
+  function targetFor(step){
+    for(var i=0;i<step.target.length;i++){var el=document.querySelector(step.target[i]);if(el)return el;}
+    return document.querySelector('.appnav .brand');
+  }
+  function place(){
+    if(!active||!currentTarget)return;
+    var r=currentTarget.getBoundingClientRect();
+    var pad=7;
+    var left=Math.max(5,r.left-pad),top=Math.max(5,r.top-pad);
+    var right=Math.min(innerWidth-5,r.right+pad),bottom=Math.min(innerHeight-5,r.bottom+pad);
+    spot.style.left=left+'px';spot.style.top=top+'px';spot.style.width=Math.max(18,right-left)+'px';
+    spot.style.height=Math.max(18,bottom-top)+'px';
+    var cw=card.offsetWidth,ch=card.offsetHeight,gap=13;
+    var cardTop=bottom+gap;
+    if(cardTop+ch>innerHeight-8)cardTop=top-ch-gap;
+    if(cardTop<8)cardTop=Math.max(6,(innerHeight-ch)/2);
+    var cardLeft=r.left+(r.width-cw)/2;
+    cardLeft=Math.max(8,Math.min(cardLeft,innerWidth-cw-8));
+    card.style.top=Math.round(cardTop)+'px';card.style.left=Math.round(cardLeft)+'px';
+  }
+  function finishStep(button){
+    var step=steps[index];
+    if(!step.action||completed[index]||button.getAttribute('data-tour-action')!==step.action)return;
+    completed[index]=true;
+    button.classList.add('is-done');
+    button.disabled=true;
+    button.textContent='✓ '+step.done;
+    var reveal=demo.querySelector('.sim-reveal');
+    if(reveal)reveal.classList.add('show');
+    task.textContent='✅ '+step.done+'。点击“下一步”继续。';
+    task.classList.add('done');
+    next.disabled=false;
+    next.focus();
+  }
+  function render(){
+    var step=steps[index];currentTarget=targetFor(step);
+    var r=currentTarget.getBoundingClientRect();
+    if(r.bottom<48||r.top>innerHeight-48)currentTarget.scrollIntoView({block:'center',behavior:'smooth'});
+    title.textContent=step.title;copy.textContent=step.copy;demo.innerHTML=step.demo;
+    count.textContent='互动新手教程 · '+(index+1)+' / '+steps.length;
+    progress.style.width=(((index+1)/steps.length)*100)+'%';
+    prev.hidden=index===0;next.textContent=index===steps.length-1?'完成':'下一步';
+    next.disabled=!!step.action&&!completed[index];
+    task.classList.toggle('done',!!completed[index]);
+    task.textContent=completed[index]?('✅ '+step.done+'。点击“下一步”继续。'):('👉 轮到你：'+step.task);
+    if(completed[index]&&step.action){
+      var doneButton=demo.querySelector('[data-tour-action="'+step.action+'"]');
+      if(doneButton){doneButton.classList.add('is-done');doneButton.disabled=true;doneButton.textContent='✓ '+step.done;}
+      var reveal=demo.querySelector('.sim-reveal');if(reveal)reveal.classList.add('show');
+    }
+    card.scrollTop=0;
+    setTimeout(function(){
+      place();
+      var actionButton=demo.querySelector('[data-tour-action]:not([disabled])');
+      (actionButton||next).focus();
+    },20);
+  }
+  function start(){
+    if(active)return;
+    restoreFocus=document.activeElement;index=0;completed=[];active=true;root.hidden=false;
+    render();
+  }
+  function close(value){
+    if(!active)return;active=false;root.hidden=true;remember(value);
+    if(restoreFocus&&restoreFocus.focus)restoreFocus.focus();
+  }
+  function forward(){if(next.disabled)return;if(index<steps.length-1){index++;render();}else close('completed');}
+  function backward(){if(index>0){index--;render();}}
+  demo.addEventListener('click',function(e){
+    var button=e.target.closest('[data-tour-action]');
+    if(button)finishStep(button);
+  });
+  next.addEventListener('click',forward);prev.addEventListener('click',backward);
+  skip.addEventListener('click',function(){close('skipped')});
+  launch.addEventListener('click',start);
+  document.addEventListener('keydown',function(e){
+    if(!active)return;
+    if(e.key==='Escape'){e.preventDefault();close('skipped');}
+    else if(e.key==='ArrowRight'){e.preventDefault();forward();}
+    else if(e.key==='ArrowLeft'){e.preventDefault();backward();}
+    else if(e.key==='Tab'){
+      var focusable=[skip].concat([].slice.call(demo.querySelectorAll('button:not([disabled])')));
+      if(!prev.hidden)focusable.push(prev);
+      if(!next.disabled)focusable.push(next);
+      var first=focusable[0],last=focusable[focusable.length-1];
+      if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    }
+  });
+  window.addEventListener('resize',place);window.addEventListener('scroll',place,true);
+  window.FinanceTour={start:start};
+  if(!seen())setTimeout(start,450);
 })();</script>"""
 
 
 def _page(html: str) -> str:
     """给整页 HTML 注入全站统一顶部导航（CSS 进 <head>、导航条紧跟 <body>）。"""
     if "</head>" in html:
-        html = html.replace("</head>", _NAV_CSS + "\n</head>", 1)
-    html = html.replace("<body>", "<body>\n" + _NAV_HTML, 1)
+        html = html.replace("</head>", _NAV_CSS + "\n" + _TOUR_CSS + "\n</head>", 1)
+    html = html.replace("<body>", "<body>\n" + _NAV_HTML + "\n" + _TOUR_HTML, 1)
     return html
 
 
