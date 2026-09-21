@@ -8,6 +8,8 @@ from __future__ import annotations
 import io
 import os
 import re
+import unicodedata
+from statistics import median
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -114,6 +116,17 @@ def _fix_amount_tokens(tokens: List[Tuple[str, float, list]]) -> List[Tuple[str,
 
     for it in fixed:
         t = (it[0] or "").strip()
+        # Chinese OCR may emit full-width digits/punctuation. Normalize only
+        # complete numeric tokens, never company names or arbitrary prose.
+        narrow = unicodedata.normalize("NFKC", t)
+        if re.fullmatch(r"-?[$€£¥]?\d[\d,.:]*", narrow):
+            t = narrow
+            it[0] = t
+        # A grouping comma can be read as a dot. Require a complete amount,
+        # three-digit groups and two final decimals; keep valid locale/crypto values.
+        grouping = re.fullmatch(r"(-?[$€£¥]?)(\d{1,3}(?:\.\d{3})+)\.(\d{2})", t)
+        if grouping:
+            it[0] = grouping[1] + grouping[2].replace(".", ",") + "." + grouping[3]
         m = re.match(r"^[Ss]\s?(\d[\d,]*(?:[.:]\d+)?)$", t)      # ① S 粘金额
         if m and _money_like(m.group(1)):
             it[0] = "$" + m.group(1)
@@ -306,8 +319,10 @@ def render_pdf_page(path: Path, n: int = 0, dpi: int = 300) -> Optional[Image.Im
 # ---- OCR 识别 ------------------------------------------------------------
 class OcrResult:
     def __init__(self, text: str, tokens: List[Tuple[str, float, list]], overall: float,
-                 dpi: int = 200, img_size: Optional[Tuple[int, int]] = None):
+                 dpi: int = 200, img_size: Optional[Tuple[int, int]] = None,
+                 original_text: Optional[str] = None):
         self.text = text
+        self.original_text = original_text if original_text is not None else text
         self.tokens = tokens          # [(文本, 置信度, 框)]
         self.overall = overall        # 整体平均置信度
         self.dpi = dpi                # 渲染 DPI，用于把像素坐标换算回 PDF 点
@@ -323,11 +338,15 @@ class OcrResult:
         scale = 72.0 / float(self.dpi)
         words = []
         geom = []
+        slope = _text_slope(self.tokens)
         for text, _score, box in self.tokens:
             xs = [p[0] for p in box]
             ys = [p[1] for p in box]
             x0, y0, x1, y1 = min(xs) * scale, min(ys) * scale, max(xs) * scale, max(ys) * scale
-            words.append((x0, y0, x1, y1, text))
+            # Straighten reading-order coordinates only. Preview/highlight boxes
+            # remain in original image coordinates; no destructive image rotation.
+            reading_y = ((box[0][1] + box[1][1]) / 2 * scale - slope * (x0+x1)/2) if slope else y0
+            words.append((x0, reading_y, x1, reading_y+y1-y0, text))
             geom.append((0, x0, y0, x1, y1, text))     # 单页，页号 0
         page_sizes = [[self.img_size[0] * scale, self.img_size[1] * scale]] if self.img_size else []
         return pdfdoc_from_word_tuples(words, full_text=self.text,
@@ -361,10 +380,11 @@ def run_ocr(img: Image.Image, do_preprocess: bool = True,
         img = preprocess(img)
     arr = np.array(img.convert("RGB"))
     tokens = _infer_rapid(arr) if use_rapid else _infer(arr)
+    original_text = _rows_to_text(tokens)
     tokens = _fix_amount_tokens(tokens)      # 金额场景字符纠错：$↔S、数字间冒号→小数点
     text = _rows_to_text(tokens)
     overall = float(np.mean([t[1] for t in tokens])) if tokens else 0.0
-    return OcrResult(text, tokens, overall, dpi=dpi, img_size=(img.width, img.height))
+    return OcrResult(text, tokens, overall, dpi=dpi, img_size=(img.width, img.height), original_text=original_text)
 
 
 _JUNK_RE = re.compile(r"[&#@~^*_=<>{}\\|]")
@@ -407,15 +427,32 @@ def run_ocr_best(img: Image.Image, do_preprocess: bool = True,
     return alt if _useful_chars(alt.text) > _useful_chars(primary.text) else primary
 
 
+def _text_slope(tokens) -> float:
+    """Robust small-angle baseline slope from OCR quadrilaterals, not page PCA."""
+    slopes = []
+    for _text, _score, box in tokens:
+        if len(box) != 4:
+            continue
+        dx = box[1][0] - box[0][0]
+        if dx >= 40:
+            slope = (box[1][1] - box[0][1]) / dx
+            if abs(slope) <= .12:
+                slopes.append(slope)
+    value = median(slopes) if len(slopes) >= 4 else 0.0
+    return value if abs(value) >= .003 else 0.0
+
+
 def _rows_to_text(tokens: List[Tuple[str, float, list]], y_tol: float = 12.0) -> str:
     """按坐标把 OCR token 重组成行，保证 'Invoice #: 555008' 这类 label:value 同行。"""
     if not tokens:
         return ""
     items = []
+    slope = _text_slope(tokens)
     for text, score, box in tokens:
         ys = [p[1] for p in box]
         xs = [p[0] for p in box]
-        items.append((min(ys), min(xs), text))
+        reading_y = (box[0][1] + box[1][1])/2 - slope*(min(xs)+max(xs))/2 if slope else min(ys)
+        items.append((reading_y, min(xs), text))
     items.sort(key=lambda t: (t[0], t[1]))
     lines: List[List[Tuple[float, str]]] = []
     cur: List[Tuple[float, str]] = []
@@ -454,6 +491,7 @@ def ocr_pdf(path: Path, dpi: int = 300) -> Optional[OcrResult]:
                 extra = run_ocr_best(img, dpi=dpi)
                 if extra:
                     r.text += "\n" + extra.text
+                    r.original_text += "\n" + extra.original_text
         finally:
             img.close()                       # 及时释放当前页，不累积
     return r if r is not None else OcrResult("", [], 0.0, dpi=dpi)

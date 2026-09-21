@@ -35,9 +35,14 @@ def infer_direction(inv, own_company: Optional[str] = None) -> str:
 
 def _amounts(inv):
     """取 (subtotal, tax, total)。缺失以 Decimal 归零/回填，保证可平。"""
-    total = _dec(inv.f("total_due").value)
+    signed_total = _dec(inv.f("total_due").value)
     sub = _dec(inv.f("subtotal").value)
     tax = _dec(inv.f("sales_tax").value)
+    if signed_total < ZERO and (sub > ZERO or tax > ZERO):
+        raise ValueError("贷项的合计、净额与税额符号不一致，请核对为负数后入账")
+    total = abs(signed_total)
+    if signed_total < ZERO:
+        sub, tax = -sub, -tax
     if total <= ZERO:                       # 没有总额，退回 净额+税
         total = sub + tax
     if sub <= ZERO:                         # 没有净额：全额记费用/收入，税并入
@@ -60,11 +65,13 @@ def accrual_entry(inv, direction: Optional[str] = None,
     """
     from core import config
     direction = direction or infer_direction(inv, own_company)
+    if direction not in (AP, AR):
+        raise ValueError("发票方向只能为 AP 或 AR")
     if tax_deductible is None:
         tax_deductible = getattr(config, "INPUT_TAX_DEDUCTIBLE", True)
     # M1:合计金额是入账权威额。total 缺失时 _amounts 会用 净额+税 兜底,但若只抓到拆分税的一档
     # (如印度 CGST 有、SGST 缺),这个兜底会静默漏掉另一档。故要求 total_due 存在,由它反推税额。
-    if _dec(inv.f("total_due").value) <= ZERO:
+    if _dec(inv.f("total_due").value) == ZERO:
         raise ValueError(
             "发票缺合计金额(total_due),无法确定入账额——请先补全总额再入账"
             "(拆分税如 CGST+SGST 只抓到一档时,靠总额反推才不漏税)：%s" % (inv.f("invoice_no").value or ""))
@@ -89,6 +96,10 @@ def accrual_entry(inv, direction: Optional[str] = None,
             lines.append(JournalLine(A.OUTPUT_TAX, credit=tax))
         memo = f"应计·应收 {no} {party}".strip()
 
+    if _dec(inv.f("total_due").value) < ZERO:
+        # Reverse net and tax together while retaining the AP/AR source identity.
+        lines = [JournalLine(l.account, debit=l.credit, credit=l.debit, memo=l.memo) for l in lines]
+        memo = "贷项·" + memo
     e = JournalEntry(
         date=date, memo=memo, lines=lines,
         source_kind="invoice", source_hash=getattr(inv, "file_hash", "") or "",

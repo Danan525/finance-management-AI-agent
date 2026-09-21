@@ -76,8 +76,8 @@ def _accrual(file_hash: str, conn) -> Optional[dict]:
     if not row:
         return None
     # 方向：分录里出现 AP 科目=应付，AR 科目=应收
-    accts = [r["account"] for r in conn.execute(
-        "SELECT account FROM journal_lines WHERE entry_id=?", (row["id"],)).fetchall()]
+    lines = conn.execute("SELECT account, debit, credit FROM journal_lines WHERE entry_id=?", (row["id"],)).fetchall()
+    accts = [r["account"] for r in lines]
     sides = [A.control_side(a) for a in accts]          # 按编码判归属（容忍科目名写法差异）
     if AP not in sides and AR not in sides:             # 期初非往来项（如银行/资本余额）不可结算
         return None
@@ -85,7 +85,10 @@ def _accrual(file_hash: str, conn) -> Optional[dict]:
     # 业务性质科目（费用/收入/资产）：排除往来控制、税、现金科目
     nature = next((a for a in accts
                    if a not in (A.AP, A.AR, A.INPUT_TAX, A.OUTPUT_TAX) and not A.is_cash(a)), "")
-    return {"gross": _dec(row["total_debit"]), "direction": direction,
+    gross = sum(((_dec(l["credit"]) - _dec(l["debit"])) if direction == AP else
+                 (_dec(l["debit"]) - _dec(l["credit"])) for l in lines
+                 if A.control_side(l["account"]) == direction), ZERO)
+    return {"gross": gross, "direction": direction,
             "entry_no": row["entry_no"], "date": row["date"] or "", "nature": nature}
 
 
@@ -143,17 +146,18 @@ def open_invoices(conn: Optional[sqlite3.Connection] = None) -> List[dict]:
             if AP not in sides and AR not in sides:      # 期初非往来项(银行/资本…)不进待结算
                 continue
             fh = r["source_hash"]
-            gross = _dec(r["total_debit"])
+            gross = _accrual(fh, c)["gross"]
             settled = settled_amount(fh, c)
             open_amt = gross - settled
-            if open_amt <= ZERO:
+            if open_amt == ZERO:
                 continue
             direction = AP if AP in sides else AR
             out.append({"file_hash": fh, "invoice_no": r["source_ref"],
                         "entry_no": r["entry_no"], "direction": direction,
                         "kind": r["source_kind"],
                         "gross": str(gross), "settled": str(settled),
-                        "open": str(open_amt)})
+                        "open": str(open_amt), "is_credit": gross < ZERO,
+                        "settlement_amount": str(abs(open_amt))})
     return out
 
 
@@ -216,7 +220,7 @@ def control_reconciliation(conn: Optional[sqlite3.Connection] = None) -> dict:
             if AP not in sides and AR not in sides:      # 期初非往来项不计入往来明细
                 continue
             fh = r["source_hash"]
-            open_amt = _dec(r["total_debit"]) - settled_amount(fh, c)
+            open_amt = _accrual(fh, c)["gross"] - settled_amount(fh, c)
             d = AP if AP in sides else AR
             detail[d] += open_amt
         other = other_control_movements(c)

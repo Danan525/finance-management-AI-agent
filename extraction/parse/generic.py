@@ -33,10 +33,10 @@ _LABELS: List[Tuple[str, str, str, bool]] = [
     ("payment_due_date", r"due\s*date|payment\s*due|pay(ment)?\s*by|due|到期日|付款期限", "date", False),
     ("fund_valuation_date", r"fund\s*valuation\s*date|valuation\s*date|nav\s*date|fund\s*val\b", "date", False),
     ("currency",         r"currency|invoice\s*ccy|ccy|币种|货币", "ccy", False),
-    ("customer_name",    r"bill(?:ed)?\s*to\b|sold\s*to\b|invoice\s*to\b|customer|client|to\s*[:：]|购买方|购货方|客户名称?|买方", "name", False),
-    ("issuer_name",      r"from|销售方|开票方|销货方|卖方", "name", True),   # 整格恰为 "From"/中文开票方标签
+    ("customer_name",    r"bill(?:ed)?\s*to\b|sold\s*to\b|invoice\s*to\b|customer(?:\s+name)?|client(?:\s+name)?|to\s*[:：]|(?:购买方|购货方|买方)(?:名称)?|客户(?:名称)?", "name", False),
+    ("issuer_name",      r"from|seller(?:\s+name)?|supplier(?:\s+name)?|vendor(?:\s+name)?|(?:销售方|开票方|销货方|卖方)(?:名称)?", "name", True),
     ("period",           r"service\s*period|period|服务期间?|费用期间?", "period", False),
-    ("subtotal",         r"sub[\s-]*total|net\s*(?:total|amount|fees?|charges?)|goods\s*total|total\s*(?:excl|before|ex)\.?\s*\w*|amount\s*before\s*tax|小计|不含税金额|税前金额|金额合计|小計|zwischensumme|sous[\s-]*total|total\s*ht", "amount", True),
+    ("subtotal",         r"sub[\s-]*total|net\s*(?:total|amount|fees?|charges?)|goods\s*total|total\s*(?:excl|before|ex)\.?\s*\w*|amount\s*before\s*tax|小计|未税金额|不含税金额|税前金额|金额合计|小計|zwischensumme|sous[\s-]*total|total\s*ht", "amount", True),
     ("sales_tax",        r"(sales\s*tax|(?:[A-Za-z]+\s+)?tax|vat|gst|cgst|sgst|igst|utgst|pst|hst|qst|service\s*charge|税额|税金|增值税额?|销项税额?|服务费|消費税|mwst\.?|ust\.?|mehrwertsteuer|tva)", "amount", True),
     ("total_due",        r"(total\s*due|amount\s*due|balance\s*(?:due|payable|outstanding|owing)|grand\s*total|gross\s*total|invoice\s*total|total\s*(amount|payable|credit|credited)|credit\s*(?:note\s*)?total|amount\s*(payable|owing|to\s*pay)|net\s*payable|please\s*pay|sum\s*(due|payable)|final\s*total|total\s*\(?\s*incl\w*\.?\s*(?:of\s*)?(?:\d+(?:\.\d+)?\s*%\s*)?(?:gst|vat|tax)?\s*\)?|total\s*charges?|total\s*(?:for\s+)?this\s*period|current\s*charges?|charges?\s*this\s*period|amount\s*due\s*this\s*period|current\s*amount\s*due|total|价税合计|价税总计|合计金额|应付金额|本期应付|本期费用合计|应付款项?|总计金额?|总金额|实付金额|合計|総計|お支払金額|gesamtbetrag|gesamtsumme|rechnungsbetrag|total\s*ttc|montant\s*total)", "amount", True),
 ]
@@ -77,7 +77,8 @@ _DATE_SUB = re.compile(
     r"\d{1,2}\s+[A-Za-z]{3,9},?\s+\d{4}|[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}|"
     r"\d{1,2}[/-][A-Za-z0-9]{1,9}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-/_]{2,}")
-_CCY = re.compile(r"\b([A-Z]{3})\b|(" + _SYMC + r")")
+_CCY_CODE = r"(?:USDT|USDC|[A-Z]{3})"
+_CCY = re.compile(r"\b(" + _CCY_CODE + r")\b|(" + _SYMC + r")", re.IGNORECASE)
 _RATE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 # 区块标题/列头等——绝不能当作字段值
 _STOP = re.compile(
@@ -155,7 +156,8 @@ def _money(text: str) -> Optional[str]:
 
 def _accept(typ: str, text: str) -> Optional[str]:
     """按类型校验候选值文本；通过返回规整后的 raw，否则 None。"""
-    s = (text or "").strip(" :：-–\t")
+    # A leading minus belongs to the amount, not to the label delimiter.
+    s = (text or "").strip(" :：\t" if typ == "amount" else " :：-–\t")
     if not s:
         return None
     if typ == "amount":
@@ -172,7 +174,7 @@ def _accept(typ: str, text: str) -> Optional[str]:
         return m.group(0) if m else None
     if typ == "ccy":
         m = _CCY.search(s)
-        return (m.group(1) or m.group(2)) if m else None
+        return (m.group(1) or m.group(2)).upper() if m else None
     # name / period：拒绝区块标题/列头与纯标签
     if _STOP.match(s) or _is_label(s):
         return None
@@ -576,7 +578,7 @@ _LI_STOP = re.compile(
     r"sub[\s-]*total|net\s*(total|amount|fees?|charges?)|gross\s*total|total\s*due|grand\s*total|"
     r"invoice\s*total|total\s*(fees?|charges?)|amount\s*(due|payable)|"
     r"total\s*payable|^total\b|incl\.?\s*tax|^bank\b|payment|swift|beneficiary|notes?\b|thank|please\s+|"
-    r"^discount\b|^less\b|^rounding\b|round\s*off|"
+    r"^discount\b|^less\b|^rounding\b|round\s*off|^list\s*price\s*[:：]|^commercial\s*discount\s*[:：]|"
     r"goods\s*total|total\s*(excl|before|ex|incl|charges?)|amount\s*before\s*tax|"
     r"balance\s*(outstanding|owing)|amount\s*(owing|to\s*pay)|net\s*payable|sum\s*(due|payable)|final\s*total|service\s*charge|"
     r"zwischensumme|sous[\s-]*total|total\s*ht|total\s*ttc|montant\s*total|gesamtbetrag|mwst|"
@@ -839,7 +841,11 @@ def extract_cn_vat(lines) -> Optional[dict]:
     amt_x = tax_x = None; hdr_i = None
     for i, cs in enumerate(rows):
         ts = [c[2] for c in cs]
-        if any("金额" in t for t in ts) and any("税额" in t for t in ts):
+        # A totals-only grid (net / tax / grand total) is not a VAT item table.
+        # Require an actual description column before overriding generic totals.
+        if (any("金额" in t for t in ts) and any("税额" in t for t in ts)
+                and any(re.search(r"货物|项目|名称|服务", t) for t in ts)
+                and not any("价税合计" in t for t in ts)):
             for (x0, _x1, t) in cs:
                 if "金额" in t and amt_x is None:
                     amt_x = x0
@@ -940,6 +946,12 @@ def extract_line_items(lines) -> List[dict]:
             return [it for it in exploded
                     if (it["description"] or it["amount"]) and not is_summary_desc(it["description"]) and not is_watermark(it["description"])]
         return _inline_single_item(rows)      # 兜底：内联 "Description: …" + "Amount Due: …" 单明细
+    # Delimited quantity/unit-price/amount columns must stay one item. Sending
+    # the whole numeric row to prose splitting counts the unit price twice.
+    header_text = " ".join(c[2] for c in rows[hdr])
+    delimiter = next((sep for sep in ("/", "|") if len(header_text.split(sep)) == 4), None)
+    columns = [_col_of(t.strip()) for t in header_text.split(delimiter)] if delimiter else []
+    delimited_table = len(set(columns)) == 4 and set(columns) == {"description", "quantity", "unit_price", "amount"}
     items: List[dict] = []
     for i in range(hdr + 1, len(rows)):
         cells = rows[i]
@@ -950,6 +962,14 @@ def extract_line_items(lines) -> List[dict]:
             continue
         if _LI_STOP.search(txt):
             break
+        if delimited_table:
+            parts = [t.strip() for t in txt.split(delimiter)]
+            if len(parts) == 4:
+                item = dict(zip(columns, parts))
+                if (_QTY_RE.fullmatch(item["quantity"]) and
+                        _accept("amount", item["unit_price"]) and _accept("amount", item["amount"])):
+                    items.append(item)
+                    continue
         # 整行钱数（按 x 从左到右，带 x）；只认"价格样(带小数/货币符号)或整格即金额"，
         # 排除门牌号/账号里的裸逗号数（如 "1,234 Main Street" 的 1,234 不算行金额）。
         money_cells = []
@@ -1086,7 +1106,7 @@ _CCY_HEADER = re.compile(r"(?:amount|total|unit|price|rate|subtotal)\s*\(\s*([A-
 _CCY_FOOTER = re.compile(r"(?:all\s+)?amounts?\s+(?:are\s+)?in\s+([A-Z]{3})\b|\bin\s+([A-Z]{3})\b", re.IGNORECASE)
 
 
-_CCY_LABEL = re.compile(r"\b(?:currency|ccy)\b\s*[:：]?\s*([A-Z]{3})\b", re.IGNORECASE)
+_CCY_LABEL = re.compile(r"(?:\b(?:currency|ccy)\b|币种|货币)\s*[:：]?\s*(" + _CCY_CODE + r")\b", re.IGNORECASE)
 _CCY_AMOUNT = re.compile(   # "USD 690.00" / "JPY 10,000" 金额前的币种码（要求千分位或小数，避免误吞 "REF 1234"）
     r"\b([A-Z]{3})\s*(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d{2,3})")
 # 货币符号（含区域化 $）→ 币种码。US$/HK$/S$/… 明确无歧义；裸 "$" 有歧义(不映射，仅作显示符号)
@@ -1159,6 +1179,7 @@ _DOC_NOISE = re.compile(
     r"|^your\s+invoice\b|^your\s+(bill|statement|receipt)\b"
     r"|not\s+for\s+payment|parser\s+test|test\s+fixture|^statement\b|^receipt\b|^remittance"
     r"|^(bill|billed|sold|ship|remit)\s*to\b"
+    r"|^(?:credit|debit)\s*(?:note|memo)\b|^(?:服务发票|发票|贷项通知单|贷记通知单)$"
     # 独立的文档类噪声词（"SIMULATED INVOICE" 被切成两格时单独的 "SIMULATED" 也拦下）
     r"|^(simulated|pro\s*forma|proforma|draft|copy|original|duplicate|specimen|sample|void)\b",
     re.IGNORECASE)
@@ -1278,6 +1299,7 @@ def extract_generic(lines) -> Dict[str, str]:
     total_cands: List[Tuple[bool, str]] = []   # 总额候选 (是否强应付标签, 值)
     tax_cands: List[str] = []            # 税额候选（多条相加：印度 CGST+SGST 等拆分税）
     sub_cands: List[str] = []            # 小计候选（分组小计发票有多个，收齐后择"总小计"）
+    cn_amount_cands: List[str] = []      # Bare 金额 needs a unique tax/total-consistent value.
     no_row = None                        # 发票号所在行，供"同址无标签发票日期"回退
     from_pos = None                      # "From" 标签的 (行, 列x)，供开票方多行地址按列收集
     for r, cells in enumerate(rows):
@@ -1285,6 +1307,11 @@ def extract_generic(lines) -> Dict[str, str]:
         for ci, (lx0, _lx1, ltext) in enumerate(cells):
             lm = _label_match(ltext)
             if not lm:
+                bare = re.fullmatch(r"金额\s*[:：]?\s*(.*)", ltext.strip())
+                if bare:
+                    value = _accept("amount", bare.group(1)) or _resolve("amount", ci, cells, lx0, nxt)
+                    if value:
+                        cn_amount_cands.append(value)
                 continue
             field, typ, inline = lm
             if field == "sales_tax":
@@ -1324,6 +1351,14 @@ def extract_generic(lines) -> Dict[str, str]:
         # 应付总额优先取"强标签"(Total Due/Amount Due/Gross Total…)的**首个**（主发票在前，
         # 尾随明细页的孤立 "Total" 属弱标签、不会覆盖）；无强标签才回退取弱候选里的最大值。
         out["total_due"] = strong[0] if strong else max(weak, key=_amount_key)
+
+    if not sub_cands and len(cn_amount_cands) == 1 and "total_due" in out and "sales_tax" in out:
+        from decimal import Decimal
+        from .amount import parse_amount
+        sub, tax, total = (parse_amount(v)[0] for v in
+                           (cn_amount_cands[0], out["sales_tax"], out["total_due"]))
+        if all(v is not None for v in (sub, tax, total)) and abs(sub + tax - total) <= Decimal("0.01"):
+            sub_cands.append(cn_amount_cands[0])
 
     if sub_cands:
         # 分组小计发票有多个"subtotal"（各 section 小计 + 总小计）→ 取**总小计**：优先与 total 自洽

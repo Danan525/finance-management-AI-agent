@@ -111,19 +111,20 @@ def post_entry(entry: JournalEntry, by: str, at: str,
             raise ValueError(f"会计期间 {period} 已关账，拒绝过账（如需调整请先重开该期）")
         # M3:结算超额防护——在写锁内复算(已结+本次 ≤ 应计全额),杜绝并发 TOCTOU 超额结算
         if entry.source_kind == "settlement" and entry.source_hash and settle_amount is not None:
-            acc = conn.execute(
-                "SELECT total_debit FROM journal_entries WHERE source_kind='invoice' "
-                "AND source_hash=? AND status='Posted' AND reverses_id IS NULL LIMIT 1",
-                (entry.source_hash,)).fetchone()
+            from . import settlement
+            acc = settlement._accrual(entry.source_hash, conn)
             if acc:
-                gross = _dec(acc["total_debit"])
+                gross = acc["gross"]
                 prior = sum((_dec(r["settle_amount"]) for r in conn.execute(
                     "SELECT settle_amount FROM journal_entries WHERE source_kind='settlement' "
                     "AND source_hash=? AND status='Posted'", (entry.source_hash,)).fetchall()), ZERO)
-                if prior + _dec(settle_amount) > gross:
+                current = _dec(settle_amount)
+                if current * gross <= ZERO or abs(prior + current) > abs(gross):
                     conn.rollback()
                     raise ValueError(
                         f"超额结算：已结 {prior} + 本次 {settle_amount} > 应计全额 {gross}")
+            else:
+                raise ValueError("结算来源已失效或被红冲，请刷新后重试")
         # 期间内顺序号
         n = conn.execute(
             "SELECT COUNT(*) AS c FROM journal_entries WHERE period=?", (period,)

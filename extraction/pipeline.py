@@ -139,6 +139,29 @@ def _classify_with_learned(inv: Invoice):
     return classifier.classify(inv)
 
 
+def _restore_registered_name_spacing(inv: Invoice) -> None:
+    """Only restore whitespace from a unique, already registered spelling.
+
+    This is not fuzzy entity merging: no letters/suffixes are removed or changed,
+    no cp_id is assigned, raw OCR remains available, ambiguous names stay untouched.
+    """
+    if not inv.ocr_used:
+        return
+    from core import counterparty
+    parties = counterparty.list_parties()
+    compact = lambda s: "".join(str(s).split()).casefold()
+    for key in ("issuer_name", "customer_name"):
+        field = inv.f(key)
+        if not field.value:
+            continue
+        matches = [p for p in parties if compact(p["name"]) == compact(field.value)]
+        if len(matches) == 1 and str(field.value) != matches[0]["name"]:
+            field.note = (field.note or "") + "；按唯一已建档名称恢复空格，原始OCR保留，请复核"
+            field.value = matches[0]["name"]
+            field.source = "ocr_registered_spacing"
+            inv.add_issue("OCR_NAME_SPACING", "名称空格按唯一已建档主体恢复，请复核", key, "info")
+
+
 def _finalize(inv: Invoice, ocr_pdf_mismatch: bool = False,
               dual_ocr_mismatch: bool = False, detect_reupload: bool = True) -> Invoice:
     """单张发票的收尾流程：置信度 → 查重 → 校验 → 风险 → 分类 → 状态 → 入库。
@@ -146,6 +169,7 @@ def _finalize(inv: Invoice, ocr_pdf_mismatch: bool = False,
     detect_reupload=False 时不按"相同文件"判重（供系统内部重处理/再识别同一文件，避免自判重复）。
     """
     _apply_learned_defaults(inv)   # 规则即数据：按对手方填人工确认过的默认值（仅填空、不覆盖）
+    _restore_registered_name_spacing(inv)
     confidence.assess(inv)
     dup = db.find_duplicate(inv.file_hash, inv.f("invoice_no").value, same_file=detect_reupload)
     checks.run_checks(inv, duplicate_of=dup)
@@ -768,7 +792,9 @@ def _process_pdf_ocr(inv: Invoice, path: Path) -> None:
         inv.add_issue("OCR_UNAVAILABLE", "扫描型 PDF 需 OCR，但 PaddleOCR 不可用", None, "critical")
         inv.ocr_quality = 0.0
         return
-    inv.raw_ocr_text = result.text
+    inv.raw_ocr_text = getattr(result, "original_text", result.text)
+    if inv.raw_ocr_text != result.text:
+        inv.add_issue("OCR_TOKEN_NORMALIZED", "OCR金额分隔符已规范化；保留原识别文本供复核", None, "info")
     inv.ocr_quality = result.overall
     # 用 OCR 坐标重建结构，复用文本路径的分栏解析；失败则退化为线性解析
     try:
@@ -841,7 +867,9 @@ def _process_image(inv: Invoice, path: Path) -> None:
         inv.add_issue("OCR_UNAVAILABLE", "图片需 OCR，但 PaddleOCR 不可用", None, "critical")
         inv.ocr_quality = 0.0
         return
-    inv.raw_ocr_text = result.text
+    inv.raw_ocr_text = getattr(result, "original_text", result.text)
+    if inv.raw_ocr_text != result.text:
+        inv.add_issue("OCR_TOKEN_NORMALIZED", "OCR金额分隔符已规范化；保留原识别文本供复核", None, "info")
     inv.ocr_quality = result.overall
     try:
         doc = result.to_pdfdoc()

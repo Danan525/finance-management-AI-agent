@@ -101,10 +101,22 @@ def _rgb(color) -> Optional[Tuple[int, int, int]]:
 
 
 def _read_cells(path) -> list:
-    """读 xlsx 活动表 → [(col,row,text,bold,size,color,fill)]。"""
+    """Read the active invoice sheet, or the sole clearly identified invoice sheet.
+
+    A cover/notes sheet may be active. Never pick arbitrarily between candidates;
+    multi-invoice splitting remains the caller's responsibility.
+    """
     import openpyxl
     wb = openpyxl.load_workbook(str(path), data_only=True)
     ws = wb.active
+    def invoice_sheet(sheet):
+        text = "\n".join(_rows_text(sheet).values())
+        return bool(_INV_ANCHOR.search(text) and re.search(
+            r"total\s*due|amount\s*due|grand\s*total|invoice\s*total|价税合计|合计金额", text, re.I))
+    if not invoice_sheet(ws):
+        candidates = [sheet for sheet in wb.worksheets if invoice_sheet(sheet)]
+        if len(candidates) == 1:
+            ws = candidates[0]
     out = []
     for row in ws.iter_rows():
         for c in row:
@@ -116,6 +128,7 @@ def _read_cells(path) -> list:
                         float(f.sz) if f and f.sz else 10.0,
                         _rgb(f.color) if f else None,
                         _rgb(c.fill.fgColor) if c.fill and c.fill.patternType == "solid" else None))
+    wb.close()
     return out
 
 
@@ -293,10 +306,17 @@ def split_xlsx(path, base_name: str, units: List[Tuple]) -> List[Tuple]:
 _FONT_CACHE: dict = {}
 
 
-def _font(bold: bool, size_px: int):
+def _font(bold: bool, size_px: int, cjk: bool = False):
     from PIL import ImageFont
-    key = (bold, size_px)
+    key = (bold, size_px, cjk)
     if key not in _FONT_CACHE:
+        if cjk:
+            # Use the CJK font already bundled with PyMuPDF. DejaVu lacks these
+            # glyphs and otherwise renders Chinese invoice fields as boxes.
+            import io
+            import fitz
+            _FONT_CACHE[key] = ImageFont.truetype(io.BytesIO(fitz.Font("china-s").buffer), size_px)
+            return _FONT_CACHE[key]
         name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
         font = None
         for d in _FONT_DIRS:                         # 随包字体优先 → 系统字体兜底
@@ -321,7 +341,8 @@ def render_png(path, scale: float = 2.0) -> bytes:
         x0, y0 = c["x0"] * scale, c["y0"] * scale
         if c["fill"]:
             draw.rectangle([x0, y0, x0 + _COLW * scale, c["y1"] * scale], fill=c["fill"])
-        font = _font(c["bold"], max(8, int(c["size"] * scale)))
+        font = _font(c["bold"], max(8, int(c["size"] * scale)),
+                     bool(re.search(r"[\u3400-\u9fff]", c["text"])))
         for i, ln in enumerate(c["lines"]):
             draw.text((x0 + 2 * scale, (c["y0"] + i * _LINEH) * scale + 2),
                       ln, font=font, fill=c["color"] or (0, 0, 0))

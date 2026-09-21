@@ -29,6 +29,7 @@ BS_ASSETS = [
 ]
 BS_LIABILITIES = [
     ("Payables", "应付账款 Payables"),
+    ("Borrowings", "借款 Borrowings"),
     ("TaxPayable", "应交税费 Tax Payable"),
 ]
 BS_EQUITY = [

@@ -33,12 +33,18 @@ def _collect() -> Tuple[Dict[str, Decimal], List[str]]:
     _dr, _cr, rows = led.trial_balance()
     by_line: Dict[str, Decimal] = {}
     unclassified: List[str] = []
+    bs_tokens = {"BalanceSheet:" + k for k, _ in
+                 mapping.BS_ASSETS + mapping.BS_LIABILITIES + mapping.BS_EQUITY}
+    is_tokens = {"IncomeStatement:" + k for k, _, kind in mapping.IS_LINES if kind == "detail"}
     for account, dr, cr in rows:
         net = dr - cr
         if net == ZERO:
             continue
         token = A.report_line(account)
-        if not token:
+        # A nonempty token is not sufficient: computed subtotals and unknown
+        # BS rows are not consumed by the report and must not silently disappear.
+        allowed = is_tokens if A.account_type(account) in ("revenue", "expense") else bs_tokens
+        if token not in allowed:
             unclassified.append(account)
             continue
         by_line[token] = by_line.get(token, ZERO) + _natural(account, net)
@@ -186,24 +192,54 @@ def cash_flow_indirect() -> dict:
                 opening_net[l.account] = opening_net.get(l.account, ZERO) + l.debit - l.credit
     side = {c: s for c, _n, _t, s, _r in A.chart()}
 
+    # Explicit investing/financing entries can use a generic current-account
+    # code (e.g. a borrowing temporarily booked in Other Payables). Their changes
+    # are not operating working capital. Reversals carry the same activity.
+    non_op_changes = {}
+    for e in led.entries:
+        if getattr(e, "activity", None) in (A.INVESTING, A.FINANCING) and e.source_kind != "opening":
+            for l in e.lines:
+                non_op_changes[l.account] = non_op_changes.get(l.account, ZERO) + l.debit - l.credit
     op_assets = op_liab = ZERO
     for a in set(end) | set(opening_net):
-        d = end.get(a, ZERO) - opening_net.get(a, ZERO)          # Δ(借−贷)
+        d = end.get(a, ZERO) - opening_net.get(a, ZERO) - non_op_changes.get(a, ZERO)
         line = A.report_line(a)
         if line in ("BalanceSheet:Receivables", "BalanceSheet:OtherCurrentAssets"):
             op_assets += d                                       # 经营流动资产（借方增加 d>0 占现金）
         elif line in ("BalanceSheet:Payables", "BalanceSheet:TaxPayable"):
             op_liab += d                                         # 经营流动负债（贷方增加 d<0 增现金）
 
-    # 非现金折旧摊销加回 = 累计折旧/摊销科目**本期贷方计提额**（排除期初余额与资产处置的借方冲销）——
-    # 不能用累折科目净变动：资产处置会 Dr 累折冲销已提折旧，把净变动抵消，漏加本期折旧（自检发现）。
+    # Derive adjustments from identified noncash journal lines, never from the
+    # E4 difference. Exclude opening/closing and closing reversals. This covers
+    # credit-funded PPE, capitalized inventory, debt/equity conversions and
+    # noncash compensation while preserving the direct/indirect cross-check.
     dep_addback = ZERO
+    noncash_adjustment = ZERO
+    adjustment_entries = []
+    closing_ids = {getattr(e, "_id", None) for e in led.entries if e.source_kind == "closing"}
+    noncash_tokens = {"BalanceSheet:" + k for k, _ in mapping.BS_ASSETS + mapping.BS_LIABILITIES + mapping.BS_EQUITY}
+    noncash_tokens -= {"BalanceSheet:" + k for k in ("CashAndEquivalents", "Receivables", "OtherCurrentAssets", "Payables", "TaxPayable")}
     for e in led.entries:
-        if getattr(e, "source_kind", "") == "opening":
+        if (e.source_kind in ("opening", "closing") or
+                (getattr(e, "reverses_id", None) is not None and e.reverses_id in closing_ids) or
+                e.cash_delta() != ZERO):
             continue
-        for l in e.lines:
-            if A.report_line(l.account) == "BalanceSheet:PPE" and side.get(A.account_code(l.account), "") == "credit":
-                dep_addback += l.credit
+        bs_lines = [l for l in e.lines if A.account_type(l.account) not in ("revenue", "expense")]
+        # Only pure depreciation/amortization entries belong in this named row.
+        # Signed net credits cancel an actual depreciation reversal; disposal
+        # removal of accumulated depreciation is not another depreciation charge.
+        pure_dep = bool(bs_lines) and all(
+            A.report_line(l.account) == "BalanceSheet:PPE" and
+            side.get(A.account_code(l.account)) == "credit" for l in bs_lines)
+        amount = -sum((l.debit - l.credit for l in bs_lines
+                       if A.report_line(l.account) in noncash_tokens), ZERO)
+        if pure_dep:
+            dep_addback += amount
+        else:
+            noncash_adjustment += amount
+        if amount:
+            adjustment_entries.append({"entry_no": e.entry_no, "memo": e.memo,
+                "kind": "depreciation" if pure_dep else "other_non_cash", "amount": str(amount)})
 
     # 剔除计入**投资/筹资活动**分录携带的损益（如资产处置收益、投资收益）——它们进了净利润，
     # 但对应现金在投资/筹资活动，间接法经营现金流不能保留在经营 NI 里（标准间接法"剔除非经营损益"）。
@@ -217,12 +253,14 @@ def cash_flow_indirect() -> dict:
                 elif t == "expense":
                     non_op_pl -= l.debit - l.credit             # 费用对 NI 的负贡献
 
-    operating = ni - non_op_pl + dep_addback - op_assets - op_liab
+    operating = ni - non_op_pl + dep_addback + noncash_adjustment - op_assets - op_liab
     direct_op = _dec(next((l["amount"] for l in cash_flow_statement()["lines"]
                            if l["key"] == A.OPERATING), "0"))
     return {
         "net_income": str(ni), "depreciation_addback": str(dep_addback),
         "non_operating_pl_excluded": str(non_op_pl),
+        "other_non_cash_adjustment": str(noncash_adjustment),
+        "adjustment_entries": adjustment_entries,
         "working_capital": {"op_assets_increase": str(op_assets),
                             "op_liab_increase": str(-op_liab)},
         "operating": str(operating), "direct_operating": str(direct_op),

@@ -65,14 +65,19 @@ def closing_entries(period: str, date: str,
     exp_total = sum(expense.values(), ZERO)
     entries: List[JournalEntry] = []
 
-    if rev_total > ZERO:
-        lines = [JournalLine(a, debit=v) for a, v in revenue.items()]
-        lines.append(JournalLine(A.CY_PROFIT, credit=rev_total))
+    if revenue:
+        # Credit notes can leave revenue with a debit balance. Close every
+        # nonzero account in its actual direction, including zero-net groups.
+        lines = [JournalLine(a, debit=max(v, ZERO), credit=max(-v, ZERO)) for a, v in revenue.items()]
+        if rev_total != ZERO:
+            lines.append(JournalLine(A.CY_PROFIT, debit=max(-rev_total, ZERO), credit=max(rev_total, ZERO)))
         entries.append(JournalEntry(date=date, memo=f"结转收入 {period}", lines=lines,
                                     source_kind="closing", status="Draft"))
-    if exp_total > ZERO:
-        lines = [JournalLine(A.CY_PROFIT, debit=exp_total)]
-        lines += [JournalLine(a, credit=v) for a, v in expense.items()]
+    if expense:
+        # Expense credits (refunds, FX gains) need debit closing lines.
+        lines = [JournalLine(a, debit=max(-v, ZERO), credit=max(v, ZERO)) for a, v in expense.items()]
+        if exp_total != ZERO:
+            lines.append(JournalLine(A.CY_PROFIT, debit=max(exp_total, ZERO), credit=max(-exp_total, ZERO)))
         entries.append(JournalEntry(date=date, memo=f"结转费用 {period}", lines=lines,
                                     source_kind="closing", status="Draft"))
     net = rev_total - exp_total                 # 本年利润净额（>0 盈利 <0 亏损）

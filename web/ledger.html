@@ -229,20 +229,22 @@ async function renderOpen(){
   let h = ctlbar;
   for(const x of invs){
     const dir = x.direction; const isAP = dir==='AP';
+    const isRefund = !!x.is_credit;
+    const settleMagnitude = x.settlement_amount || String(Math.abs(Number(x.open)));
     const m = x.matched;
     const matchBar = m ? `<div style="padding:6px 14px;background:#eaf5ec;border-top:1px solid #d6ebd9;font-size:12px;color:#137333">
         🔗 对账已匹配银行现金 <b>${esc(m.cash)}</b>${m.date?('（'+esc(m.date)+'）'):''}
         <button class="ok" style="padding:4px 12px;margin-left:8px" onclick="doSettleFromMatch('${esc(x.file_hash)}')">据对账结算</button></div>` : '';
     h += `<div class="card">
       <div class="chead">
-        <span class="badge b-${dir}">${isAP?'应付':'应收'}</span>
+        <span class="badge b-${dir}">${isRefund?(isAP?'供应商退款':'退客户款'):(isAP?'应付':'应收')}</span>
         <span class="no">${esc(x.invoice_no||x.entry_no)}</span>
         <span class="memo">全额 ${esc(x.gross)}　已结 ${esc(x.settled)}</span>
         <span class="amt">未结 ${esc(x.open)}</span>
       </div>${matchBar}
       <div class="cact" style="justify-content:flex-start;flex-wrap:wrap;gap:8px">
-        <label class="muted">清账票面额 <input id="sa-${esc(x.file_hash)}" type="text" placeholder="默认全部 ${esc(x.open)}" style="width:120px"></label>
-        <label class="muted">${isAP?'实付':'实收'}现金 <input id="cash-${esc(x.file_hash)}" type="text" value="${m?esc(m.cash):''}" placeholder="必填" style="width:110px"></label>
+        <label class="muted">清账票面额（正数） <input id="sa-${esc(x.file_hash)}" type="text" placeholder="默认全部 ${esc(settleMagnitude)}" style="width:120px"></label>
+        <label class="muted">${isRefund?(isAP?'实收退款':'实付退款'):(isAP?'实付':'实收')}现金 <input id="cash-${esc(x.file_hash)}" type="text" value="${m?esc(m.cash):''}" placeholder="必填正数" style="width:110px"></label>
         <label class="muted">付款币种 <input id="ccy-${esc(x.file_hash)}" type="text" placeholder="默认 USD" style="width:70px;text-transform:uppercase" title="外币付款填币种(如 EUR)，按结算日汇率换算，差额为汇兑损益"></label>
         <label class="muted">结算日期 <input id="sdate-${esc(x.file_hash)}" type="date"></label>
         <label class="muted">差额原因 <select id="reason-${esc(x.file_hash)}">${reasonOpts}</select></label>
@@ -251,7 +253,7 @@ async function renderOpen(){
           <option value="operating">经营活动</option>
           <option value="investing">投资活动</option>
           <option value="financing">筹资活动</option></select></label>
-        <button class="ok" onclick="doSettle('${esc(x.file_hash)}','${esc(x.open)}')">✓ 结算</button>
+        <button class="ok" onclick="doSettle('${esc(x.file_hash)}','${esc(settleMagnitude)}')">✓ ${isRefund?'退款结算':'结算'}</button>
       </div></div>`;
   }
   document.getElementById('body').innerHTML = h;

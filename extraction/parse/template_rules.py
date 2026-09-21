@@ -362,7 +362,7 @@ def parse_pdfdoc(inv: Invoice, doc: PdfDoc, source: str = "pdf_text") -> None:
         inv.line_items = [li for li in inv.line_items if not generic.is_summary_desc(li.description)]
     # 非贷记单：明细金额不应为负——负号多为 OCR 把货币符号($/¥)误读成"-"，取正（贷记单/退款保留负数）
     _fl = (full or "").lower()
-    _is_credit = any(k in _fl for k in ("credit note", "credit memo", "贷记", "红冲"))
+    _is_credit = bool(re.search(r"credit\s*note|credit\s*memo|贷记|贷项|红冲|红字", _fl))
     if inv.line_items and not _is_credit:
         for li in inv.line_items:
             if li.amount is not None and li.amount < 0:

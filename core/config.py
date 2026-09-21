@@ -49,6 +49,9 @@ MAX_CONCURRENT_PROCESS = 2   # 同时处理（OCR/渲染/转换）的上限（20
 HOST = "127.0.0.1"          # 严禁绑定 0.0.0.0；财务数据不出机
 PORT = 8000
 
+# Known digital-asset quantities must never silently use the bank cash ledger.
+DIGITAL_ASSET_CURRENCIES = frozenset({"BTC", "ETH", "USDT", "USDC", "DAI", "SOL", "WBTC", "WETH"})
+
 # ---- 金额 ----------------------------------------------------------------
 AMOUNT_DECIMALS = 2          # 期望小数位（仅作校验参考，不强制截断，保留真实精度）
 

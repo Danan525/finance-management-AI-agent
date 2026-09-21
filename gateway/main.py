@@ -1718,11 +1718,16 @@ def review_page_image(file_hash: str, n: int, request: Request):
 @app.get("/api/review/{file_hash}/original")
 def review_original_file(file_hash: str):
     """下载原始上传文件（无法在线预览的格式，如旧版 .doc，供人工下载后用本地软件打开对照录入）。"""
-    p = _safe_original(file_hash)
+    inv = db.get_invoice(file_hash)
+    if inv and inv.source_file_path:
+        p = Path(inv.source_file_path).resolve()
+        if config.UPLOAD_DIR.resolve() not in p.parents or not p.is_file():
+            p = None
+    else:
+        p = _safe_original(file_hash)
     if p is None:
         return JSONResponse({"error": "未找到原件"}, status_code=404)
-    inv = db.get_invoice(file_hash)
-    return FileResponse(p, filename=(inv.file_name if inv else p.name))
+    return FileResponse(p, filename=((inv.source_file_name or inv.file_name) if inv else p.name))
 
 
 def _pick_words_text(ocr_words, page: int, x0: float, y0: float, x1: float, y1: float) -> str:

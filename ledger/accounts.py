@@ -98,6 +98,8 @@ _BUILTIN_CHART = [
     ("2220", "应交税费-应交所得税 Income Tax Payable", "liability", "credit", "BalanceSheet:TaxPayable"),
     ("2241", "应付职工薪酬 Salaries Payable", "liability", "credit", "BalanceSheet:Payables"),
     ("2280", "其它应付款 Other Payables", "liability", "credit", "BalanceSheet:Payables"),
+    ("2001", "短期借款 Short-term Borrowings", "liability", "credit", "BalanceSheet:Borrowings"),
+    ("2501", "长期借款 Long-term Borrowings", "liability", "credit", "BalanceSheet:Borrowings"),
     # 收入 / 其它收益
     ("4001", "主营业务收入 Operating Revenue", "revenue", "credit", "IncomeStatement:Revenue"),
     ("4100", "利息收入 Interest Income", "revenue", "credit", "IncomeStatement:OtherIncome"),

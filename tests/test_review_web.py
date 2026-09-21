@@ -53,7 +53,7 @@ class ReviewWebTest(unittest.TestCase):
         """互动新手教程：模拟全流程、当前动作完成后才解锁下一步。"""
         from gateway.main import _TOUR_HTML
 
-        for path in ("/", "/review"):
+        for path in ("/", "/review", "/reconcile", "/ledger", "/reports", "/counterparties", "/learned"):
             r = self.c.get(path)
             self.assertEqual(r.status_code, 200)
             self.assertIn('id="onboarding-tour"', r.text)

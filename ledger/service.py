@@ -128,9 +128,10 @@ def settle_invoice(file_hash: str, cash_amount, diff_reason: Optional[str] = Non
     if info is None:
         raise ValueError("该发票尚未入账（无已过账应计分录），不能结算")
     open_amt, direction, _gross = info
-    if open_amt <= ZERO:
+    if open_amt == ZERO:
         raise ValueError("该发票已结清，无未结余额")
-
+    is_credit = _gross < ZERO
+    open_amt = abs(open_amt)
     settle_amt = _dec_or(settle_amount, open_amt)
     if settle_amt <= ZERO:
         raise ValueError("结算票面额必须为正")
@@ -142,6 +143,9 @@ def settle_invoice(file_hash: str, cash_amount, diff_reason: Optional[str] = Non
         raise ValueError("必须提供实收/付现金金额")
     func = getattr(config, "FUNCTIONAL_CURRENCY", "USD")
     cash_ccy = (cash_currency or func).strip().upper()
+    if cash_ccy in getattr(config, "DIGITAL_ASSET_CURRENCIES", ()):
+        raise ValueError("暂不支持数字资产原币结算：不能把代币收付记为银行存款。"
+                         "请保留待结余额；只有实际发生法币收付款时才可选择银行结算。")
     cash_note = ""
     if cash_ccy != func:                       # 外币付款 → 按结算日汇率换算成功能货币
         # 外币下"清账面额"(账面 USD)与"实付现金"是不同汇率口径，不默认全额清账——否则部分付款
@@ -183,7 +187,12 @@ def settle_invoice(file_hash: str, cash_amount, diff_reason: Optional[str] = Non
         direction=direction, settle_amount=settle_amt, cash_amount=cash,
         diff_account=acct, cash_account=cash_account, date=use_date, memo=memo + cash_note,
         source_hash=file_hash, source_ref=ref)
-    return store.post_entry(entry, by=by, at=_now(), settle_amount=settle_amt, activity=act)
+    if is_credit:
+        for line in entry.lines:
+            line.debit, line.credit = line.credit, line.debit
+        entry.memo = "贷项退款·" + entry.memo
+    return store.post_entry(entry, by=by, at=_now(),
+                            settle_amount=-settle_amt if is_credit else settle_amt, activity=act)
 
 
 def _dec_or(v, default):
@@ -476,9 +485,10 @@ def fx_revaluation_view(as_of_date: str = "") -> dict:
             continue
         total_ccy = _dec(rec.f("total_due").value)
         gross = _dec(inv["gross"]); book = _dec(inv["open"])
-        if total_ccy <= ZERO or gross <= ZERO or book <= ZERO:
+        if total_ccy == ZERO or gross == ZERO or book == ZERO:
             continue
-        open_ccy = (total_ccy * book / gross).quantize(Decimal("0.01"))
+        # Preserve source currency precision and credit signs; round USD valuations only.
+        open_ccy = total_ccy * book / gross
         rate = fx.rate(ccy, as_of)
         direction = inv["direction"]
         row = {"file_hash": inv["file_hash"], "invoice_no": inv.get("invoice_no", ""),
