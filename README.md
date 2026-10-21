@@ -1,14 +1,19 @@
 # Finance Management AI Agent · 本地 AI 财务管理系统
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-667%20passing-brightgreen)
-![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![Python](https://img.shields.io/badge/tested-Python%203.12-blue)
 
 > **纯本地、数据不出机**的 AI 财务单据处理系统：上传发票 / 银行流水 → 自动识别提取 → 人工审核 → 对账 → 复式记账 → 三张 IFRS 财务报表 → 导出带审计轨迹的 Excel。
 >
 > 识别、审核、记账与报表均在本地运行，不接外部大模型；处理基于**确定性规则 + 本地 OCR**，可解释、可追溯、可复核。唯一受控出站是读取公开汇率，以及用户自行配置后的 Lark 汇率状态通知；二者都不上传发票、金额、客户或账务数据。功能货币 USD，IFRS 口径，按月软关账。
 
 ---
+
+## 开发交接
+
+**接手开发请先读 [HANDOFF.md](HANDOFF.md)**：当前实现、源码入口、安装与验证步骤、业务约束和已知待办。
+
+2026-10-21：补充公开版交接说明并更新本页状态；应用代码沿用当前已同步版本，本次没有增加业务功能。安装与日常使用见 [使用说明.md](使用说明.md)。
 
 ## ✨ 亮点
 
@@ -18,7 +23,7 @@
 - **复式记账内核**：借贷平衡**硬校验**（不平拒绝过账、绝不自动凑平）；应计 → 资金结算两段式；红冲、幂等、凭证号、明细辅助账与控制账户对账。
 - **三张 IFRS 报表 + 勾稽**：利润表 / 资产负债表 / 直接法现金流量表，勾稽（资产=负债+权益、现金勾稽、科目归类完整）**不通过不出表**。
 - **AI 绝不自动入账**：过账是人工显式动作，机器只给建议。
-- **667 个自动化测试**，覆盖提取、对账、记账、报表与公开发布隐私守卫。
+- **自动化回归测试**，覆盖提取、审核、对账、记账和报表；实际用例数与结果以当前版本的运行输出为准。
 
 ## 🧩 功能模块
 
@@ -48,12 +53,12 @@
 
 ## 🚀 本地运行（试用）
 
-需要 Python 3.9+。
+建议使用 Python 3.12（当前验证环境）。
 
 ```bash
 # 1. 依赖
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-core.txt
 pip install -r requirements-ocr.txt      # 可选：扫描件/图片 OCR（Mac 用 requirements-ocr-mac.txt）
 
 # 2. 启动（仅监听 127.0.0.1，自动打开浏览器）
@@ -71,7 +76,7 @@ pip install -r requirements-ocr.txt      # 可选：扫描件/图片 OCR（Mac �
 # 或： python -m unittest discover -s tests
 ```
 
-667 个测试，覆盖金额/日期/币种解析、多格式提取、水印鲁棒、对账匹配、复式记账（借贷平衡/结算/红冲/控制账户）、三张报表与勾稽、Excel 导出等。
+测试覆盖金额/日期/币种解析、多格式提取、水印鲁棒、对账匹配、复式记账（借贷平衡/结算/红冲/控制账户）、三张报表与勾稽、Excel 导出等。先安装测试依赖 `httpx`；OCR、旧 Office 等可选能力需要相应依赖。测试数量、跳过项和结果以运行输出为准。
 
 ## 🔒 隐私与安全立场
 
@@ -82,7 +87,7 @@ pip install -r requirements-ocr.txt      # 可选：扫描件/图片 OCR（Mac �
 
 ## 🗺 状态与路线
 
-核心闭环（提取 → 审核 → 对账 → 复式记账[应计+结算] → 三张 IFRS 报表 → Excel 导出）已打通。后续增强：现金流量表间接法交叉验证、期末软关闭与结转、报表 PDF 导出、多用户协同。
+核心闭环（提取 → 审核 → 对账 → 复式记账[应计+结算] → 三张报表 → Excel 导出）已打通；期初建账、月度软关账、三表勾稽及互动新手教程均已实现。后续仍包括报表 PDF/多期对比、N:N 自动拆分及更完整的对手方往来能力。对话 Agent、记忆维护和多用户权限隔离尚未完成，详见 [交接说明](HANDOFF.md)。
 
 ## 📄 许可证
 
